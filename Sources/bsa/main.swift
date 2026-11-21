@@ -10,6 +10,8 @@ let help = """
 Boy Scout Agent — one run, one improvement, one commit.
 
 Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV]
+       bsa schedule add --at HH:MM --duration 4h | list | remove ID
+       bsa stop | history | doctor | harnesses | config show
        bsa history
        bsa status
        bsa --help
@@ -66,6 +68,32 @@ do {
             }
             if record.terminal == true { exit(1) }
             if !["committed", "no_candidate"].contains(record.outcome) { exit(record.outcome == "cancelled" ? 130 : 1) }
+        case "schedule":
+            let scheduler = try Scheduler()
+            if args == ["schedule", "list"] {
+                for schedule in try scheduler.list() { print("\(schedule.id) daily \(schedule.at) for \(schedule.duration) [host local time; created in \(schedule.timezone)] \(schedule.repository)") }
+            } else if args.count == 3 && args[1] == "remove" {
+                try scheduler.remove(args[2])
+                print("Removed schedule files. Unload any installed native timer first; see README.")
+            } else if args.count == 6 && args[1] == "add" && args[2] == "--at" && args[4] == "--duration" {
+                let executable = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path
+                let schedule = try scheduler.add(repository: directory, executable: executable, at: args[3], duration: args[5])
+                print("Created \(schedule.id) in \(scheduler.directory.path). Install its native scheduler file or invoke its .sh manually; see README.")
+            } else { throw BSAError.message("Use schedule add --at HH:MM --duration 4h, schedule list, or schedule remove ID") }
+        case "stop":
+            guard args.count == 1 else { throw BSAError.message("stop takes no options") }
+            try runner.stop(at: directory)
+            print("Cancellation requested.")
+        case "config":
+            guard args == ["config", "show"] else { throw BSAError.message("Use config show") }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            print(String(decoding: try encoder.encode(Configuration.load(repository: Repository(at: directory))), as: UTF8.self))
+        case "doctor", "harnesses":
+            let configuration = try Configuration.load(repository: Repository(at: directory))
+            let harness = try Harnesses.select(configuration: configuration, directory: directory)
+            try harness.detect(in: directory)
+            print("Git repository OK. Harness: \(harness.name). Verification: \(configuration.verification?.joined(separator: "; ") ?? "automatic Swift detection; otherwise configure verification")")
         case "history":
             guard args.count == 1 else { throw BSAError.message("history takes no options") }
             for record in try runner.history(at: directory) {

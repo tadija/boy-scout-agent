@@ -50,6 +50,26 @@ final class RunnerTests: XCTestCase {
         XCTAssertEqual(try git(["worktree", "list", "--porcelain"]).components(separatedBy: "worktree ").count, 2)
     }
 
+    func testExpiredDeadlineDoesNotInvokeHarness() throws {
+        let config = try Configuration.load(repository: Repository(at: checkout))
+        let records = try Runner().runSession(at: checkout, configuration: config,
+            harness: FakeHarness { _ in XCTFail("Expired session invoked harness"); return self.success() },
+            dataDirectory: data, deadline: Date(timeIntervalSinceNow: -1))
+        XCTAssertTrue(records.isEmpty)
+        try assertNoCommit()
+    }
+    func testStopWithoutActiveSessionIsRejected() throws {
+        XCTAssertThrowsError(try Runner().stop(at: checkout))
+    }
+    func testStopMarkerCancelsActiveCommand() throws {
+        let marker = temporary.appendingPathComponent("stop")
+        try Data().write(to: marker)
+        Cancellation.stopFile = marker
+        defer { Cancellation.stopFile = nil }
+        let start = Date()
+        _ = try commands.run("/bin/sh", ["-c", "sleep 30"], cwd: checkout)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
+    }
     func testSessionStopsAtSaturation() throws {
         var config = try Configuration.load(repository: Repository(at: checkout))
         config.maxIterations = 100
@@ -198,11 +218,14 @@ final class RunnerTests: XCTestCase {
         defer { lock.release() }
         XCTAssertThrowsError(try run { _ in self.success() })
     }
-    func testInterruptedRecordBlocksUnsafeRestart() throws {
+    func testInterruptedRecordIsReconciledBeforeRestart() throws {
         let repo = try Repository(at: checkout)
         let store = try StateStore(repository: repo, dataDirectory: data)
         try store.save(Record(id: "interrupted-test", repository: checkout.path, branch: "bsa/project", started: Date(), outcome: "running"))
-        XCTAssertThrowsError(try run { _ in XCTFail("Must not resume blindly"); return self.success() })
+        let record = try run { _ in self.success() }
+        XCTAssertEqual(record.outcome, "no_candidate")
+        let recovered = try JSONDecoder().decode(Record.self, from: Data(contentsOf: store.directory.appendingPathComponent("interrupted-test.json")))
+        XCTAssertEqual(recovered.outcome, "interrupted")
     }
     func testVerificationCannotModifyProposedChange() throws {
         var configuration = Configuration()

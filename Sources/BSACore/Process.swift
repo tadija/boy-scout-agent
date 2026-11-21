@@ -13,6 +13,10 @@ public enum BSAError: Error, CustomStringConvertible {
 
 public enum Cancellation {
     public nonisolated(unsafe) static var requested: Int32 = 0
+    public nonisolated(unsafe) static var stopFile: URL?
+    public static var shouldStop: Bool {
+        requested != 0 || stopFile.map { FileManager.default.fileExists(atPath: $0.path) } == true
+    }
     public static func install() {
         signal(SIGINT) { _ in Cancellation.requested = 1 }
         signal(SIGTERM) { _ in Cancellation.requested = 1 }
@@ -67,7 +71,7 @@ public final class CommandRunner {
                 if errno == EINTR { continue }
                 throw BSAError.message("Cannot wait for child process")
             }
-            if ProcessInfo.processInfo.systemUptime >= deadline || (cancellable && Cancellation.requested != 0) {
+            if ProcessInfo.processInfo.systemUptime >= deadline || (cancellable && Cancellation.shouldStop) {
                 expired = ProcessInfo.processInfo.systemUptime >= deadline
                 kill(-pid, SIGTERM)
                 let grace = ProcessInfo.processInfo.systemUptime + 1

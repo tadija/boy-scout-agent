@@ -8,6 +8,18 @@ public final class Runner {
         try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory).latest
     }
 
+    public func stop(at directory: URL) throws {
+        let repo = try Repository(at: directory)
+        do {
+            let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
+            lock.release()
+            throw BSAError.message("No active BSA run for this repository")
+        } catch let error as BSAError {
+            guard error.description.contains("Another BSA run") else { throw error }
+        }
+        try Data().write(to: repo.commonDirectory.appendingPathComponent("bsa.stop"), options: .atomic)
+    }
+
     public func history(at directory: URL, dataDirectory: URL? = nil) throws -> [Record] {
         let store = try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory)
         return try FileManager.default.contentsOfDirectory(at: store.directory, includingPropertiesForKeys: nil)
@@ -23,13 +35,17 @@ public final class Runner {
         let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
         defer { sessionLock.release() }
         let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
+        let stop = repo.commonDirectory.appendingPathComponent("bsa.stop")
+        try? FileManager.default.removeItem(at: stop)
+        Cancellation.stopFile = stop
+        defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
         try harness.detect(in: repo.root)
         let sessionID = UUID().uuidString.lowercased()
         var records: [Record] = []
         var failures = 0
         var empty = 0
         for _ in 0..<configuration.maxIterations {
-            if Cancellation.requested != 0 || deadline.map({ Date() >= $0 }) == true { break }
+            if Cancellation.shouldStop || deadline.map({ Date() >= $0 }) == true { break }
             var bounded = configuration
             if let deadline { bounded.timeoutSeconds = min(bounded.timeoutSeconds, max(0.001, deadline.timeIntervalSinceNow)) }
             let record = try iteration(repo: repo, config: bounded, harness: harness, store: store, sessionID: sessionID)
@@ -51,6 +67,10 @@ public final class Runner {
         // The lock lives in Git's common directory so different data roots cannot bypass it.
         let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
         defer { lock.release() }
+        let stop = repo.commonDirectory.appendingPathComponent("bsa.stop")
+        try? FileManager.default.removeItem(at: stop)
+        Cancellation.stopFile = stop
+        defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
         try harness.detect(in: repo.root)
         return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased())
     }
@@ -98,7 +118,7 @@ public final class Runner {
         let deadline = ProcessInfo.processInfo.systemUptime + config.timeoutSeconds
         func remaining() -> TimeInterval { max(0.001, deadline - ProcessInfo.processInfo.systemUptime) }
         func checkBudget() throws {
-            if Cancellation.requested != 0 { throw BSAError.message("cancelled") }
+            if Cancellation.shouldStop { throw BSAError.message("cancelled") }
             if ProcessInfo.processInfo.systemUptime >= deadline { throw BSAError.message("timed_out") }
         }
         func checks(_ values: [String], at directory: URL, baseline: Bool) throws {
@@ -168,7 +188,7 @@ public final class Runner {
                     "Outcome: \($0.outcome). Task: \(($0.task ?? "none").prefix(400)). Detail: \(($0.detail ?? "none").prefix(200))"
                 }.joined(separator: "\n")), cwd: worktree, timeout: remaining())
             } catch {
-                record.outcome = Cancellation.requested != 0 ? "cancelled" : "harness_failed"
+                record.outcome = Cancellation.shouldStop ? "cancelled" : "harness_failed"
                 throw error
             }
             record.task = String(response.output.suffix(8192))
@@ -209,6 +229,9 @@ public final class Runner {
                 try repo.git(["update-ref", "--no-deref", target, commit, originalTarget ?? String(repeating: "0", count: baseline.count)])
                 record.outcome = "committed"
                 try store.own(branch: branch, commit: commit)
+                if config.push {
+                    try repo.git(["push", "--", "origin", target + ":" + target])
+                }
             }
         } catch {
             if record.outcome == "running" {

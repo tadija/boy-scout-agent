@@ -301,3 +301,26 @@ The ten most recent durable records on the target branch and their changed paths
 Records link each attempt to its session and harness. One common Git lock covers the entire session, including the gaps between attempts. Candidate ranking and repeat avoidance remain prompt-based; structured semantic
 candidate scoring, global config, YAML and independent model review are deferred.
 Stage 1 decisions above describe the original baseline, superseded here where noted.
+
+## 18. Stage 3 operational implementation
+
+Execution windows support `--duration Ns|Nm|Nh` (up to seven days) and next-local
+`--until HH:MM`; active command budgets are reduced to the remaining window.
+`stop` uses a common-Git-directory cooperative marker and existing process-group
+termination. Repository-wide kernel locks prevent overlaps across branches,
+linked checkouts and state roots. Latest interrupted records are reconciled under
+that lock against the published target SHA; unpublished work is retained for
+manual inspection, never resumed blindly or automatically published.
+
+`history`, `config show`, `doctor` and `harnesses` provide operational inspection.
+Global JSON defaults precede repository configuration and CLI overrides.
+Explicit `push: true` performs non-forced origin pushes after publication.
+Scheduling creates durable daily definitions, shell wrappers and launchd plists
+or systemd service/timer files. Native installation and unloading are explicit
+operator commands documented in README; manual wrapper invocation is the fallback.
+Native schedules follow host-local DST behavior and do not request catch-up.
+
+Limitations: normalized harness costs are unavailable, so no dollar budget is
+advertised. Abandoned worktree removal and verbose native log rotation are manual;
+per-record command output remains bounded. Prompt-based candidate ranking and
+self-review remain supplementary, without a separate semantic model reviewer.
