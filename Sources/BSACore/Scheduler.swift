@@ -32,7 +32,7 @@ public struct Scheduler {
         let stem = directory.appendingPathComponent(schedule.id)
         try JSONEncoder().encode(schedule).write(to: stem.appendingPathExtension("json"), options: .atomic)
         func quote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-        let script = "#!/bin/sh\ncd " + quote(repo.root.path) + " || exit 1\nexec " + quote(executable) + " run --count 2147483647 --duration " + quote(duration) + "\n"
+        let script = "#!/bin/sh\ncd " + quote(repo.root.path) + " || exit 1\nexec " + quote(executable) + " run --duration " + quote(duration) + "\n"
         let scriptURL = stem.appendingPathExtension("sh")
         try Data(script.utf8).write(to: scriptURL, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)

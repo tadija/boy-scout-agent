@@ -98,7 +98,7 @@ bsa schedule list
 
 Definitions and executable wrappers live in `$XDG_DATA_HOME/bsa/schedules`.
 Creation prepares files without enabling a service. The wrapper captures the
-repository and executable paths, runs bounded iterations and uses the current
+repository and executable paths, honors the configured `maxIterations` (default 1) and uses the current
 repository configuration at execution time. Keep the installed BSA executable at
 a stable absolute path. Native services need the harness executable on their PATH
 and existing noninteractive authentication. Test the generated `.sh` manually
@@ -147,3 +147,6 @@ History JSON records retain bounded harness summaries and check outputs, IDs,
 SHAs, paths and timings. Records are retained indefinitely for audit; native
 schedule output logs should be rotated by the operator. They may contain sensitive
 repository output. No dashboard, database or background BSA daemon is required.
+
+Cancellation and timeout preserve dirty implementation worktrees. The iteration
+record includes the path when Git refuses to remove one.

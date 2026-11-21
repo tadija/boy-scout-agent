@@ -55,6 +55,7 @@ final class RunnerTests: XCTestCase {
         let schedule = try scheduler.add(repository: checkout, executable: "/usr/local/bin/bsa", at: "00:00", duration: "4h")
         XCTAssertEqual(try scheduler.list().map(\.id), [schedule.id])
         let script = try String(contentsOf: scheduler.directory.appendingPathComponent(schedule.id + ".sh"), encoding: .utf8)
+        XCTAssertFalse(script.contains("--count"))
         XCTAssertTrue(script.contains("--duration '4h'"))
         XCTAssertTrue(script.contains(checkout.path))
         XCTAssertThrowsError(try scheduler.remove("../unknown"))
