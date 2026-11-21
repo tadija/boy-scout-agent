@@ -168,6 +168,16 @@ final class RunnerTests: XCTestCase {
         XCTAssertNotEqual(record.baselineChecks.first?.status, 0)
         XCTAssertEqual(record.checks.first?.status, 0)
     }
+    func testConfiguredProtectedGlobBlocksPublication() throws {
+        try write("bsa.json", #"{"verification":["true"],"protectedPaths":["*.txt"]}"#)
+        let record = try run { cwd in
+            try self.write("value.txt", "changed", at: cwd)
+            return self.success()
+        }
+        XCTAssertEqual(record.outcome, "rejected")
+        XCTAssertTrue(record.detail?.contains("Configured protected path") == true)
+        try assertNoCommit()
+    }
     func testProtectedPathIsRejected() throws {
         let record = try run { cwd in
             try self.write(".env", "PASSWORD=private", at: cwd)

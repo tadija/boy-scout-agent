@@ -1,4 +1,9 @@
 import Foundation
+#if os(Linux)
+import Glibc
+#else
+import Darwin
+#endif
 
 public final class Runner {
     private let commands = CommandRunner()
@@ -199,7 +204,7 @@ public final class Runner {
                 .split(separator: "\0").map(String.init)
             if record.paths.isEmpty { record.outcome = "no_candidate" }
             else {
-                try validate(paths: record.paths, repository: repo, worktree: worktree, limit: config.maxChangedFiles)
+                try validate(paths: record.paths, repository: repo, worktree: worktree, limit: config.maxChangedFiles, protectedPaths: config.protectedPaths)
                 let tree = try repo.git(["write-tree"], at: worktree)
                 _ = try repo.git(["diff", "--cached", "--check"], at: worktree)
                 try checkBudget()
@@ -257,10 +262,13 @@ public final class Runner {
         return record
     }
 
-    private func validate(paths: [String], repository: Repository, worktree: URL, limit: Int) throws {
+    private func validate(paths: [String], repository: Repository, worktree: URL, limit: Int, protectedPaths: [String]) throws {
         guard paths.count <= limit else { throw BSAError.message("Change exceeds maxChangedFiles") }
         let blocked = [".env", ".git", ".github", "bsa.json", "secrets", "credentials", "package.resolved", "package-lock.json", "yarn.lock", "package.swift", "makefile", "agents.md", "claude.md"]
         for path in paths {
+            guard !protectedPaths.contains(where: { fnmatch($0, path, 0) == 0 }) else {
+                throw BSAError.message("Configured protected path: " + path)
+            }
             let parts = path.lowercased().split(separator: "/").map(String.init)
             guard !parts.contains(where: { part in blocked.contains(part) || part.hasPrefix(".env.") || part.hasSuffix(".pem") || part.hasSuffix(".key") || [".build", "node_modules", "dist", "build"].contains(part) }) else {
                 throw BSAError.message("Protected or generated path: \(path)")

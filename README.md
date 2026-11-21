@@ -47,6 +47,7 @@ Create an optional `bsa.json` in the root of your checkout. CLI flags override r
 | Setting | Default or behavior |
 | --- | --- |
 | `verification` | Ordered shell commands. Include any setup they need in a fresh checkout. |
+| `protectedPaths` | Additional case-sensitive POSIX glob patterns against repository-relative paths. `*` can match slashes, e.g. `vendor/*`. Built-in protections always apply. |
 | `instructions` | Additional project preferences for the agent. |
 | `harness` | Automatic discovery, or choose `codex`, `claude`, `pi`, `opencode`, or `custom`. |
 | `customCommand` | For a custom harness, give the executable and arguments as an array, e.g. `["my-agent", "{prompt}"]`. Use `{cwd}` for the worktree path. Arguments are passed directly. |

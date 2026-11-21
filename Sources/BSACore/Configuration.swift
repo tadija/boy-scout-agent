@@ -4,6 +4,7 @@ public struct Configuration: Codable {
     public var push: Bool = false
     public var harness: String?
     public var customCommand: [String]?
+    public var protectedPaths: [String] = []
     public var instructions: String = ""
     public var maxIterations: Int = 1
     public var failureLimit: Int = 3
@@ -26,10 +27,10 @@ public struct Configuration: Codable {
             dictionary.merge(values) { _, new in new }
         }
         guard
-              Set(dictionary.keys).isSubset(of: ["branch", "base", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "instructions", "maxIterations", "failureLimit", "saturationLimit", "push"]) else {
+              Set(dictionary.keys).isSubset(of: ["branch", "base", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "instructions", "maxIterations", "failureLimit", "saturationLimit", "push", "protectedPaths"]) else {
             throw BSAError.message("bsa.json contains unknown keys or is not an object")
         }
-        let defaults: [String: Any] = ["push": false, "timeoutSeconds": 1800, "maxChangedFiles": 12, "instructions": "", "maxIterations": 1, "failureLimit": 3, "saturationLimit": 2]
+        let defaults: [String: Any] = ["protectedPaths": [String](), "push": false, "timeoutSeconds": 1800, "maxChangedFiles": 12, "instructions": "", "maxIterations": 1, "failureLimit": 3, "saturationLimit": 2]
         let merged = defaults.merging(dictionary) { _, new in new }
         let configuration = try JSONDecoder().decode(Configuration.self, from: JSONSerialization.data(withJSONObject: merged))
         try configuration.validate()
