@@ -70,6 +70,8 @@ final class RunnerTests: XCTestCase {
                 try self.write("value.txt", UUID().uuidString, at: cwd)
                 return self.success()
             }), dataDirectory: data)
+        XCTAssertEqual(Set(records.compactMap(\.sessionID)).count, 1)
+        XCTAssertTrue(records.allSatisfy { $0.harness == "fake" })
         XCTAssertEqual(seen.count, 3)
         XCTAssertEqual(records.filter { $0.outcome == "committed" }.count, 3)
         XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "4")

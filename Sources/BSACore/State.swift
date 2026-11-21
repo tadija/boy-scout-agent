@@ -26,6 +26,9 @@ public struct Check: Codable {
 
 public struct Record: Codable {
     public let id: String
+    public var sessionID: String?
+    public var harness: String?
+    public internal(set) var terminal: Bool?
     public let repository: String
     public let branch: String
     public let started: Date
@@ -86,10 +89,11 @@ struct StateStore {
             return try JSONDecoder().decode(Record.self, from: Data(contentsOf: url))
         }
     }
-    func recent() throws -> [Record] {
+    func recent(branch: String) throws -> [Record] {
         try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" && !["latest.json", "branches.json"].contains($0.lastPathComponent) }
             .map { try JSONDecoder().decode(Record.self, from: Data(contentsOf: $0)) }
+            .filter { $0.branch == branch }
             .sorted { $0.started > $1.started }.prefix(10).map { $0 }
     }
     func ownedBranches() throws -> [String: String] {

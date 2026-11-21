@@ -9,21 +9,25 @@ public final class Runner {
     }
 
     public func runSession(at directory: URL, configuration: Configuration, harness: any HarnessAdapter,
-                           dataDirectory: URL? = nil) throws -> [Record] {
+                           dataDirectory: URL? = nil, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
         try configuration.validate()
         let repo = try Repository(at: directory)
-        let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa-session.lock"))
+        let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
         defer { sessionLock.release() }
+        let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
+        try harness.detect(in: repo.root)
+        let sessionID = UUID().uuidString.lowercased()
         var records: [Record] = []
         var failures = 0
         var empty = 0
         for _ in 0..<configuration.maxIterations {
             if Cancellation.requested != 0 { break }
-            let record = try run(at: directory, configuration: configuration, harness: harness, dataDirectory: dataDirectory)
+            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID)
             records.append(record)
+            onIteration(record)
             failures = ["committed", "no_candidate"].contains(record.outcome) ? 0 : failures + 1
             empty = record.outcome == "no_candidate" ? empty + 1 : 0
-            if failures >= configuration.failureLimit || empty >= configuration.saturationLimit || ["cancelled", "timed_out"].contains(record.outcome) { break }
+            if record.terminal == true || failures >= configuration.failureLimit || empty >= configuration.saturationLimit || ["cancelled", "timed_out"].contains(record.outcome) { break }
         }
         return records
     }
@@ -37,16 +41,21 @@ public final class Runner {
         // The lock lives in Git's common directory so different data roots cannot bypass it.
         let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
         defer { lock.release() }
+        try harness.detect(in: repo.root)
+        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased())
+    }
+
+    private func iteration(repo: Repository, config: Configuration, harness: any HarnessAdapter,
+                           store: StateStore, sessionID: String) throws -> Record {
         let history = try store.latest
-        let recent = try store.recent()
         if let previous = history, previous.outcome == "running" {
             throw BSAError.message("Interrupted session \(previous.id). Inspect \(store.directory.path) and its worktree before starting again; automatic recovery is deferred to stage 3.")
         }
-        try harness.detect(in: repo.root)
         let base = try repo.git(["rev-parse", "--verify", "--end-of-options", (config.base ?? "HEAD") + "^{commit}"])
         let slug = repo.root.lastPathComponent.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? String($0) : "-" }.joined()
         let branch = config.branch ?? "bsa/\(slug)"
         _ = try repo.git(["check-ref-format", "--branch", branch])
+        let recent = try store.recent(branch: branch)
         let target = "refs/heads/" + branch
         guard try repo.git(["rev-parse", "--symbolic-full-name", "HEAD"]) != target else {
             throw BSAError.message("Run from your development branch, not the BSA target branch")
@@ -65,6 +74,8 @@ public final class Runner {
         let id = UUID().uuidString.lowercased()
         let worktree = store.directory.appendingPathComponent("worktree-" + id)
         var record = Record(id: id, repository: repo.root.path, branch: branch, started: Date(), outcome: "running", baseline: baseline)
+        record.sessionID = sessionID
+        record.harness = harness.name
         try store.save(record)
         var worktrees: [URL] = []
         let deadline = ProcessInfo.processInfo.systemUptime + config.timeoutSeconds
@@ -116,12 +127,14 @@ public final class Runner {
             else if FileManager.default.fileExists(atPath: worktree.appendingPathComponent("Package.swift").path) { verification = ["swift test"] }
             else { verification = [] }
             guard !verification.isEmpty else {
+                record.terminal = true
                 throw BSAError.message("No meaningful verification detected. Configure verification commands in bsa.json (Swift packages use swift test automatically).")
             }
             func assertGit(at directory: URL) throws {
                 guard try repo.git(["rev-parse", "HEAD"], at: directory) == baseline,
                       try repo.git(["rev-parse", "--abbrev-ref", "HEAD"], at: directory) == "HEAD",
                       try repo.refs() == refs else {
+                    record.terminal = true
                     throw BSAError.message("Harness or checks changed HEAD or repository refs")
                 }
             }
@@ -134,8 +147,8 @@ public final class Runner {
             try checkBudget()
             let response: CommandResult
             do {
-                response = try harness.run(prompt: Planner.prompt(history: config.instructions + "\nExplore neglected areas; avoid repeating unchanged failed tasks. Recent paths: " + recent.flatMap(\.paths).suffix(30).joined(separator: ", ") + "\n" + recent.map {
-                    "Outcome: \($0.outcome). Task: \($0.task ?? "none"). Detail: \($0.detail ?? "none")"
+                response = try harness.run(prompt: Planner.prompt(history: config.instructions + "\nExplore neglected areas; avoid repeating unchanged failed tasks. Recent paths: " + recent.flatMap(\.paths).prefix(30).joined(separator: ", ") + "\n" + recent.map {
+                    "Outcome: \($0.outcome). Task: \(($0.task ?? "none").prefix(400)). Detail: \(($0.detail ?? "none").prefix(200))"
                 }.joined(separator: "\n")), cwd: worktree, timeout: remaining())
             } catch {
                 record.outcome = Cancellation.requested != 0 ? "cancelled" : "harness_failed"
@@ -185,12 +198,14 @@ public final class Runner {
                 let reason = String(describing: error)
                 record.outcome = ["cancelled", "timed_out"].contains(reason) ? reason : "rejected"
             }
+            if record.outcome == "committed" { record.terminal = true }
             record.detail = String(describing: error)
         }
         for directory in worktrees.reversed() {
             do {
                 try repo.git(["worktree", "remove", "--force", directory.path])
             } catch {
+                record.terminal = true
                 record.detail = (record.detail.map { $0 + "\n" } ?? "") + "Cleanup failed; inspect \(directory.path): \(error)"
             }
         }

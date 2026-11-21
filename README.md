@@ -1,10 +1,10 @@
 # Boy Scout Agent
 
-Leave your codebase a little better than you found it. Boy Scout Agent (`bsa`) is a command-line tool that asks Codex to find and make one worthwhile improvement in a Git repository. Each successful run gives you one local commit to review.
+Leave your codebase a little better than you found it. Boy Scout Agent (`bsa`) asks an installed coding agent to find one worthwhile improvement, checks its work, and gives you a local Git commit to review. You can run it once or give it a few more turns.
 
 ## Install
 
-You’ll need Git, Swift, and the Codex CLI on macOS or Linux. From a clone of this repository, build and install the executable:
+Build with Swift 6 or later on macOS or Linux. Install Git and sign in to at least one supported coding agent CLI. BSA looks for Codex, Claude Code, Pi, then OpenCode, in that order.
 
 ```sh
 swift build -c release
@@ -13,55 +13,50 @@ cp .build/release/bsa ~/.local/bin/bsa
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-If you haven’t signed in to Codex yet, run `codex login`.
+## Improve a project
 
-## Run it on a project
-
-Open a repository you trust, with at least one commit and your Git author name and email configured. Swift packages use `swift test` automatically. For other projects, set up the checks below first.
+Open a trusted repository with at least one commit and a configured Git author. Swift packages use `swift test` automatically. For other projects, set up verification below first.
 
 ```sh
 bsa run
 bsa status
-```
-
-BSA starts from your current commit and runs the project checks to get a baseline. Codex works in a separate Git worktree, so you can keep your local edits. BSA inspects the proposed diff and runs the checks again in a fresh worktree. If the change passes, BSA commits it on a local branch. If verification fails or Codex finds nothing worth changing, the run produces no branch commit.
-
-The output shows the branch name. For a project named `my-project`, review the changes from your development branch with:
-
-```sh
 git diff HEAD...bsa/my-project
 ```
 
-You decide what to merge or push. Running `bsa run` again continues on the BSA branch. If your development branch has diverged, choose a fresh target with `bsa run --branch bsa/next-improvement`.
+Use the branch name printed by BSA in the diff command. BSA starts from your current commit, runs the baseline checks and gives the agent a detached worktree. Your local edits stay in your checkout. BSA inspects the diff and runs verification again against the proposed contents in a fresh worktree. Each accepted improvement adds one commit to the local BSA branch. You decide what to merge or push.
 
-## Set up project checks
+For a longer run, set an iteration limit and optionally choose the agent.
 
-Create a `bsa.json` at the root of your project and list the commands that should pass before you would accept a change. For example, a Python project with tests in a `tests/` directory might use:
+```sh
+bsa run --count 10 --harness claude
+```
+
+Each iteration starts a fresh agent with recent tasks, failures and changed paths from the target branch. BSA stops after two consecutive empty attempts, three consecutive failures, cancellation, timeout, or an error that needs attention. Running again continues from the BSA branch. If your development branch has diverged, start a new target with `bsa run --branch bsa/next-improvement`.
+
+## Configure a repository
+
+Create an optional `bsa.json` in the root of your checkout. CLI flags override repository settings.
 
 ```json
 {
-  "verification": ["python3 -m unittest discover -s tests"]
+  "verification": ["python3 -m unittest discover -s tests"],
+  "instructions": "Prioritize error handling in the importer."
 }
 ```
 
-Commands run in order in each fresh checkout. Include any setup they need, and use commands you trust to execute on your machine.
+| Setting | Default or behavior |
+| --- | --- |
+| `verification` | Ordered shell commands. Include any setup they need in a fresh checkout. |
+| `instructions` | Additional project preferences for the agent. |
+| `harness` | Automatic discovery, or choose `codex`, `claude`, `pi`, `opencode`, or `custom`. |
+| `customCommand` | For a custom harness, give the executable and arguments as an array, e.g. `["my-agent", "{prompt}"]`. Use `{cwd}` for the worktree path. Arguments are passed directly. |
+| `base`, `branch` | Starting revision and local target branch. Defaults are HEAD and `bsa/<project>`. |
+| `maxIterations` | 1 attempt per invocation. Override with `--count`. |
+| `failureLimit`, `saturationLimit` | 3 consecutive failures or 2 consecutive empty attempts. |
+| `timeoutSeconds`, `maxChangedFiles` | 1800 seconds per iteration and 12 changed files. |
 
-### Stage 2 autonomy
+## Inspect a run
 
-`bsa run --count 100` runs up to 100 fresh iterations. Stops after two consecutive
-empty attempts, three consecutive failures, cancellation or timeout. Each attempt
-retains the Stage 1 isolated verification and atomic publication contract.
+Use `bsa status` for the latest outcome, branch, commit candidate and diagnostics. Per-iteration JSON records live under `$XDG_DATA_HOME/bsa` (default `~/.local/share/bsa`). After an interrupted publication, inspect the record and Git branch before attempting recovery.
 
-Select `--harness codex|claude|pi|opencode|custom`; automatic discovery uses that
-order (excluding custom). Authenticate the chosen CLI first. Claude uses print mode
-with acceptEdits; commands still require permissions configured in that CLI.
-Pi and OpenCode run in print/run mode without resuming conversations.
-These harnesses can execute repository code: use a trusted environment.
-
-Configuration remains dependency-free `bsa.json`. Additional optional keys:
-`harness`, `customCommand` (argument array with `{prompt}` and optional `{cwd}`),
-`instructions`, `maxIterations`, `failureLimit`, `saturationLimit`.
-CLI flags override repository settings. Instructions extend mandatory safety rules.
-Recent ten outcomes and touched paths guide bounded candidate selection and exploration.
-Failure avoidance is prompt guidance, not a deterministic semantic deduplication system.
-Global configuration and YAML parsing remain deferred.
+Worktrees isolate proposed edits. Harnesses and verification commands still run with your account's permissions. Use trusted projects and commands, or run BSA in an OS sandbox.

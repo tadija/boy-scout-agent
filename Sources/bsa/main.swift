@@ -45,18 +45,17 @@ do {
             }
             let harness = try Harnesses.select(configuration: configuration, directory: directory)
             print("Harness: \(harness.name). Up to \(configuration.maxIterations) isolated iterations…")
-            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness)
-            for record in records {
-                print("\(record.outcome) on \(record.branch)")
+            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness) { record in
+                print("\(record.outcome) on \(record.branch)\(record.commit.map { " (\($0))" } ?? "")")
+                if let detail = record.detail { print(detail) }
             }
-            guard let record = records.last else { exit(130) }
-            print("\(record.outcome) on \(record.branch)\(record.commit.map { " (\($0))" } ?? "")")
-            if let detail = record.detail { print(detail) }
+            guard Cancellation.requested == 0, let record = records.last else { exit(130) }
+            if record.terminal == true { exit(1) }
             if !["committed", "no_candidate"].contains(record.outcome) { exit(record.outcome == "cancelled" ? 130 : 1) }
         case "status":
             guard args.count == 1 else { throw BSAError.message("status takes no options") }
             if let record = try runner.status(at: directory) {
-                print("Session: \(record.id)\nBranch: \(record.branch)\nOutcome: \(record.outcome)")
+                print("Session: \(record.sessionID ?? record.id)\nBranch: \(record.branch)\nOutcome: \(record.outcome)")
                 if let commit = record.commit { print("Commit candidate: \(commit)") }
                 if let detail = record.detail { print(detail) }
             } else { print("No BSA sessions recorded for this repository.") }

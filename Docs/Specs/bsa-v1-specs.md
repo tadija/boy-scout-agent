@@ -297,7 +297,7 @@ argument arrays are selectable; automatic precedence follows that order.
 Repository bsa.json adds harness, customCommand, instructions, maxIterations,
 failureLimit and saturationLimit; CLI overrides repository values. Defaults stop
 after two empty attempts or three failures. Timeout and cancellation stop sessions.
-Recent ten durable records and paths supply exploration and failure-avoidance context.
-Candidate ranking and repeat avoidance remain prompt-based; structured semantic
+The ten most recent durable records on the target branch and their changed paths supply exploration and failure-avoidance context.
+Records link each attempt to its session and harness. One common Git lock covers the entire session, including the gaps between attempts. Candidate ranking and repeat avoidance remain prompt-based; structured semantic
 candidate scoring, global config, YAML and independent model review are deferred.
 Stage 1 decisions above describe the original baseline, superseded here where noted.
