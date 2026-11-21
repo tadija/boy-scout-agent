@@ -1,17 +1,23 @@
 name: Swift
 on: [push, pull_request]
+
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: macos-latest
+          - os: ubuntu-latest
+            container: swift:6.0-noble
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: '6.0'
+      - run: swift --version
       - run: swift test
       - run: swift build -c release
-      - run: .build/release/bsa --help
-      - run: sh Tests/Integration/cli-smoke.sh "$PWD/.build/release/bsa"
+      - run: sh Tests/Integration/cli-smoke.sh "$(swift build -c release --show-bin-path)/bsa"

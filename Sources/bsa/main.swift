@@ -50,6 +50,16 @@ do {
                 if let detail = record.detail { print(detail) }
             }
             guard Cancellation.requested == 0, let record = records.last else { exit(130) }
+            if records.count < configuration.maxIterations && record.terminal != true {
+                switch record.outcome {
+                case "no_candidate":
+                    print("Stopped after \(configuration.saturationLimit) consecutive attempts without a candidate.")
+                case "harness_failed", "verification_failed", "rejected":
+                    print("Stopped after \(configuration.failureLimit) consecutive failures.")
+                default:
+                    break
+                }
+            }
             if record.terminal == true { exit(1) }
             if !["committed", "no_candidate"].contains(record.outcome) { exit(record.outcome == "cancelled" ? 130 : 1) }
         case "status":

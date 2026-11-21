@@ -39,6 +39,7 @@ grep -q 'Outcome: committed' "$fixture/status"
 [ "$(git show bsa/project:value.txt)" = after ]
 [ "$(git symbolic-ref --short HEAD)" = main ]
 "$bsa" run --count 100 > "$fixture/empty"
+grep -q 'Stopped after 2 consecutive attempts without a candidate' "$fixture/empty"
 [ "$(grep -c 'no_candidate on' "$fixture/empty")" = 2 ]
 [ "$(git rev-list --all --count)" = 2 ]
 for harness in claude pi opencode custom; do
