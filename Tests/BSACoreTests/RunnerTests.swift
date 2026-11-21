@@ -304,7 +304,7 @@ final class RunnerTests: XCTestCase {
     func testZeroConfigSwiftPackageDetectsAndRunsTests() throws {
         try FileManager.default.removeItem(at: checkout.appendingPathComponent("bsa.json"))
         try write("Package.swift", """
-        // swift-tools-version: 5.10
+        // swift-tools-version: 6.0
         import PackageDescription
         let package = Package(name: "Fixture", targets: [
             .target(name: "Fixture"), .testTarget(name: "FixtureTests", dependencies: ["Fixture"])

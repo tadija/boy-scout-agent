@@ -229,7 +229,7 @@ remain the full v1 target; features below explicitly deferred are not implemente
 The canonical specification filename is `Docs/Specs/bsa-v1-specs.md` (the stage prompt's
 `boy-scout-agent-v1-specs.md` reference refers to this document).
 
-- Swift package with a small POSIX C spawn shim, no third-party runtime dependencies, Swift 5.10+, macOS 13+ and Linux.
+- Swift package with a small POSIX C spawn shim, no third-party runtime dependencies, Swift 6.0+, macOS 13+ and Linux.
   Modules cover CLI, configuration, Git, harness, planning, verification, runner and
   JSON history. Scheduling remains a future concern rather than an empty abstraction.
 - Commands: `bsa run [--branch NAME] [--base REV]`, `bsa status`, and help. Only one
