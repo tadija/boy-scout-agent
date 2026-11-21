@@ -221,3 +221,70 @@ If no executable project checks can be determined, do not pretend the change is 
 **Stage 3 — Operations:** scheduling via launchd/systemd, cancellation/recovery, status/history/doctor, optional push, hardened guardrails, integration tests, README and release packaging.
 
 Each stage should leave a working, testable executable. Keep this specification synchronized with code and document any intentional deviations.
+
+## 16. Stage 1 implementation decisions (November 2026)
+
+The implemented stage is the reliable single-iteration core. The preceding sections
+remain the full v1 target; features below explicitly deferred are not implemented yet.
+The canonical specification filename is `Docs/Specs/bsa-v1-specs.md` (the stage prompt's
+`boy-scout-agent-v1-specs.md` reference refers to this document).
+
+- Swift package with a small POSIX C spawn shim, no third-party runtime dependencies, Swift 6.0+, macOS 13+ and Linux.
+  Modules cover CLI, configuration, Git, harness, planning, verification, runner and
+  JSON history. Scheduling remains a future concern rather than an empty abstraction.
+- Commands: `bsa run [--branch NAME] [--base REV]`, `bsa status`, and help. Only one
+  iteration per invocation; later multi-iteration/time-window/schedule commands are
+  intentionally rejected rather than accepted without effect.
+- Codex is the only production adapter. The adapter detects the installed `exec`
+  interface and invokes `--ask-for-approval never exec` with
+  `--sandbox workspace-write --cd --output-last-message`.
+  Every iteration is a fresh invocation. Fake adapters and a fake Codex executable
+  exercise the lifecycle without model access. Adapter detection/version compatibility
+  is capability-based; additional adapters and richer usage metadata are deferred.
+- A bounded five-candidate search, priority ranking, single-improvement scope and
+  self-review are prompt instructions. The runner supplies the previous outcome/task
+  to discourage repetition. Structured candidates, exploration scoring and a separate
+  model diff-review invocation are deferred to stage 2. Structural checks remain
+  authoritative but do not prove semantic coherence or detect all weakened tests.
+- Configuration is optional **bsa.json**, not YAML, avoiding a parser dependency.
+  Keys: `base`, `branch`, `verification` (shell-command array), `timeoutSeconds`
+  (default 1800), `maxChangedFiles` (default 12). CLI overrides repository config;
+  global config and custom rule/glob configuration are deferred to stage 2.
+  Unknown keys, wrong types and invalid limits are errors. Repository config comes
+  from the invoking checkout; implementation comes from the committed baseline.
+- Swift packages use `swift test` by default. Staging excludes untracked files in
+  the root `.build` directory. Other projects must configure meaningful checks,
+  and all final checks must pass. BSA records baseline failures so the improvement
+  can address them.
+- BSA uses a new detached worktree for every attempt, rather than reusing potentially
+  stale content. Final verification materializes the proposed Git tree in a separate
+  fresh worktree, without ignored or generated files from implementation. After
+  verification, BSA publishes the target branch using `commit-tree` and
+  compare-and-swap `update-ref`. This avoids hooks/index operations
+  changing verified contents during commit. Failed ref publication can leave an
+  unreachable commit object, but no accepted branch commit. Hooks are disabled on
+  BSA Git operations. Default base is the invoking HEAD; target is `bsa/<slug>`.
+  Branch ownership records reject preexisting/unrelated or externally modified refs;
+  default-name collisions therefore fail safely rather than overwriting a branch.
+- File locks live in Git's common directory, shared by linked worktrees and all
+  data roots; no stale PID heuristic is needed. Mutable JSON records and worktrees
+  live outside the checkout in the XDG data directory, keyed by canonical Git identity.
+  The empty lock file is the sole operational file inside Git metadata.
+- Outcomes and bounded command diagnostics are persisted atomically. Candidate SHAs
+  are recorded before branch publication so a crash can be audited. Stage 1 blocks
+  blind restart of a running/interrupted record; automatic recovery and history CLI
+  remain stage 3. Records are retained without automatic rotation for now.
+- SIGINT/SIGTERM and a whole-iteration timeout terminate active commands, escalating
+  TERM to KILL for a process group established atomically at spawn. Ordinary
+  background children are terminated even after the main command exits. Git setup/cleanup have their
+  own bounds. Full descendant containment and crash recovery remain operations work.
+- Guards conservatively reject common protected/generated paths, manifests/lockfiles,
+  CI/config/instruction edits, binary changes, new symlinks/submodules, oversized diffs,
+  obvious credential markers and removal of common assertion/test invocation lines.
+  Custom exclusions and sophisticated secret/scope analysis are deferred. Checks and
+  harness output can contain sensitive information; trusted code and OS sandboxing
+  are required. A worktree is not a security boundary and Git mutation detection
+  cannot reverse malicious external effects. See README for exact limits/recovery.
+- There is no automatic push, scheduler, daemon, dashboard, or merge. The README
+  documents stage 1 installation, verification/config, safety, status and troubleshooting;
+  scheduling setup will be documented when scheduling is implemented.
