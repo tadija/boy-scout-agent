@@ -324,3 +324,12 @@ Limitations: normalized harness costs are unavailable, so no dollar budget is
 advertised. Abandoned worktree removal and verbose native log rotation are manual;
 per-record command output remains bounded. Prompt-based candidate ranking and
 self-review remain supplementary, without a separate semantic model reviewer.
+
+### Final review amendments
+
+Repository configuration supports additional protected path globs in
+`protectedPaths`. The structural guard checks both sides of renames before
+publication. Generated schedule wrappers respect configured iteration limits.
+On cancellation or timeout, Git removes clean worktrees and retains dirty ones
+with the path in the iteration diagnostics. The CI matrix packages the tested
+release executable and README for each host architecture.
