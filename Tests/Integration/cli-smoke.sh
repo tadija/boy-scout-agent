@@ -59,4 +59,16 @@ HARNESS
   "$bsa" run --harness "$harness" > "$fixture/$harness.out"
   grep -q 'no_candidate on' "$fixture/$harness.out"
 done
+"$bsa" history > "$fixture/history"
+grep -q committed "$fixture/history"
+"$bsa" config show > "$fixture/config"
+"$bsa" schedule add --at 00:00 --duration 4h > "$fixture/schedule"
+"$bsa" schedule list > "$fixture/schedules"
+grep -q 'daily 00:00 for 4h' "$fixture/schedules"
+schedule_id=$(awk '{print $1}' "$fixture/schedules")
+"$bsa" schedule remove "$schedule_id" > "$fixture/removed"
+"$bsa" schedule list > "$fixture/schedules"
+[ ! -s "$fixture/schedules" ]
+if "$bsa" run --until 25:00 > "$fixture/invalid" 2>&1; then exit 1; fi
+if "$bsa" stop > "$fixture/stop" 2>&1; then exit 1; fi
 printf 'CLI smoke test passed\n'
