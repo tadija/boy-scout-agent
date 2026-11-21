@@ -38,8 +38,25 @@ grep -q 'Outcome: committed' "$fixture/status"
 [ "$(cat value.txt)" = 'uncommitted user work' ]
 [ "$(git show bsa/project:value.txt)" = after ]
 [ "$(git symbolic-ref --short HEAD)" = main ]
-if "$bsa" run --count 2 > "$fixture/error" 2>&1; then
-  echo 'unsupported stage 2 flag unexpectedly succeeded' >&2
-  exit 1
-fi
+"$bsa" run --count 100 > "$fixture/empty"
+grep -q 'Stopped after 2 consecutive attempts without a candidate' "$fixture/empty"
+[ "$(grep -c 'no_candidate on' "$fixture/empty")" = 2 ]
+[ "$(git rev-list --all --count)" = 2 ]
+for harness in claude pi opencode custom; do
+  cat > "$fixture/bin/$harness" <<'HARNESS'
+#!/bin/sh
+case "$*" in *--help*) echo '--print --permission-mode --no-session'; exit 0;; esac
+case "${0##*/}" in
+  claude) [ "$1 $2 $3" = '--print --permission-mode acceptEdits' ] && shift 3 || exit 2;;
+  pi) [ "$1 $2" = '--print --no-session' ] && shift 2 || exit 2;;
+  opencode) [ "$1" = run ] && shift || exit 2;;
+  custom) [ "$(cd "$1" && pwd -P)" = "$(pwd -P)" ] && shift || exit 2;;
+esac
+case "$1" in *'Make exactly one bounded'*) exit 0;; *) exit 2;; esac
+HARNESS
+  chmod +x "$fixture/bin/$harness"
+  printf '%s\n' '{"customCommand":["custom","{cwd}","{prompt}"],"verification":["test -s value.txt"]}' > bsa.json
+  "$bsa" run --harness "$harness" > "$fixture/$harness.out"
+  grep -q 'no_candidate on' "$fixture/$harness.out"
+done
 printf 'CLI smoke test passed\n'

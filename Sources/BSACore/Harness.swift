@@ -46,3 +46,51 @@ struct Planner {
         """
     }
 }
+
+/// Each invocation is a new process; custom arguments never pass through a shell.
+struct CommandAdapter: HarnessAdapter {
+    public let name: String
+    let arguments: [String]
+    public init(name: String, arguments: [String]) { self.name = name; self.arguments = arguments }
+    public func detect(in directory: URL) throws {
+        if name == "custom" {
+            let executable = arguments[0]
+            let paths = executable.hasPrefix("/") ? [executable] :
+                (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":")
+                    .map { String($0) + "/" + executable }
+            guard paths.contains(where: FileManager.default.isExecutableFile(atPath:)) else {
+                throw BSAError.message("Cannot find custom executable: \(executable)")
+            }
+            return
+        }
+        let probe = name == "opencode" ? [name, "run", "--help"] : [name, "--help"]
+        let result = try CommandRunner().run("/usr/bin/env", probe, cwd: directory, timeout: 10)
+        let flags = arguments.dropFirst().filter { $0.hasPrefix("--") }
+        guard result.status == 0, flags.allSatisfy(result.output.contains) else {
+            throw BSAError.message("Install a compatible \(name) CLI supporting \(arguments.dropFirst().joined(separator: " "))")
+        }
+    }
+    public func run(prompt: String, cwd: URL, timeout: TimeInterval) throws -> CommandResult {
+        let expanded = arguments.map { $0.components(separatedBy: "{prompt}").map { $0.replacingOccurrences(of: "{cwd}", with: cwd.path) }.joined(separator: prompt) }
+        return try CommandRunner().run("/usr/bin/env", expanded, cwd: cwd, timeout: timeout)
+    }
+}
+
+public enum Harnesses {
+    public static func select(configuration: Configuration, directory: URL) throws -> any HarnessAdapter {
+        let adapters: [any HarnessAdapter] = [CodexAdapter(),
+            CommandAdapter(name: "claude", arguments: ["claude", "--print", "--permission-mode", "acceptEdits", "{prompt}"]),
+            CommandAdapter(name: "pi", arguments: ["pi", "--print", "--no-session", "{prompt}"]),
+            CommandAdapter(name: "opencode", arguments: ["opencode", "run", "{prompt}"])]
+        if configuration.harness == "custom" {
+            guard let command = configuration.customCommand, let executable = command.first, !executable.isEmpty, !executable.hasPrefix("-"), !executable.contains("="), (executable.hasPrefix("/") || !executable.contains("/")), command.dropFirst().contains(where: { $0.contains("{prompt}") }) else { throw BSAError.message("customCommand requires an executable and {prompt} argument") }
+            return CommandAdapter(name: "custom", arguments: command)
+        }
+        if let name = configuration.harness {
+            guard let adapter = adapters.first(where: { $0.name == name }) else { throw BSAError.message("Unknown harness: \(name)") }
+            return adapter
+        }
+        for adapter in adapters { if (try? adapter.detect(in: directory)) != nil { return adapter } }
+        throw BSAError.message("Install Codex, Claude Code, Pi or OpenCode, or configure a custom harness")
+    }
+}

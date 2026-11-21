@@ -10,11 +10,11 @@ Implement **Stage 2 — Autonomy & Intelligence** of Boy Scout Agent (BSA), usin
 - Support configurable custom harness commands.
 - Implement harness selection by CLI flag and configuration.
 - Add default improvement priorities and Boy Scout rules.
-- Support optional repository configuration through `bsa.yaml`.
+- Support optional repository configuration through `bsa.json`, preserving existing configurations without adding a parser dependency.
 - Prioritize high-value changes while using controlled exploration to cover neglected areas.
 - Select one coherent, appropriately scoped improvement per iteration.
 - Persist success, failure, rejection, and no-op outcomes.
-- Avoid retrying known failures without changed circumstances.
+- Supply recent failed tasks and diagnostics to the planner so it can avoid unchanged failures. Enforce a consecutive failure limit independently of planner behavior.
 - Detect saturation and stop rather than inventing changes.
 - Stop correctly at iteration limits and unrecoverable errors.
 - Test configuration, adapters, iteration boundaries, and stopping conditions.
@@ -39,3 +39,5 @@ Implement **Stage 2 — Autonomy & Intelligence** of Boy Scout Agent (BSA), usin
 7. Logical development commits.
 
 **Acceptance:** `bsa run --count 100` can perform up to 100 fresh iterations, each producing at most one verified commit, and stop appropriately based on history, limits, and saturation.
+
+Candidate discovery, selection, and self-review share the fresh agent invocation. The fixed priority order and repository instructions guide selection. Git guards and project verification determine whether a commit can be published.

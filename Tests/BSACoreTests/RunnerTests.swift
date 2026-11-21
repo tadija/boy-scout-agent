@@ -50,6 +50,33 @@ final class RunnerTests: XCTestCase {
         XCTAssertEqual(try git(["worktree", "list", "--porcelain"]).components(separatedBy: "worktree ").count, 2)
     }
 
+    func testSessionStopsAtSaturation() throws {
+        var config = try Configuration.load(repository: Repository(at: checkout))
+        config.maxIterations = 100
+        let records = try Runner().runSession(at: checkout, configuration: config,
+            harness: FakeHarness(action: { _ in self.success() }), dataDirectory: data)
+        XCTAssertEqual(records.count, 2)
+        XCTAssertTrue(records.allSatisfy { $0.outcome == "no_candidate" })
+        try assertNoCommit()
+    }
+
+    func testSessionCountUsesFreshWorktrees() throws {
+        var config = try Configuration.load(repository: Repository(at: checkout))
+        config.maxIterations = 3
+        var seen: Set<URL> = []
+        let records = try Runner().runSession(at: checkout, configuration: config,
+            harness: FakeHarness(action: { cwd in
+                seen.insert(cwd)
+                try self.write("value.txt", UUID().uuidString, at: cwd)
+                return self.success()
+            }), dataDirectory: data)
+        XCTAssertEqual(Set(records.compactMap(\.sessionID)).count, 1)
+        XCTAssertTrue(records.allSatisfy { $0.harness == "fake" })
+        XCTAssertEqual(seen.count, 3)
+        XCTAssertEqual(records.filter { $0.outcome == "committed" }.count, 3)
+        XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "4")
+    }
+
     func testSuccessPreservesDirtyCheckoutAndProducesExactlyOneCommit() throws {
         let head = try git(["rev-parse", "HEAD"])
         try write("value.txt", "user staged\n")
