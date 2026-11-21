@@ -12,12 +12,11 @@ Boy Scout Agent — one run, one improvement, one commit.
 Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV]
        bsa schedule add --at HH:MM --duration 4h | list | remove ID
        bsa stop | history | doctor | harnesses | config show
-       bsa history
        bsa status
        bsa --help
 
 Runs fresh isolated iterations with Codex, Claude Code, Pi or OpenCode. Swift packages use swift test automatically;
-other projects need verification commands in bsa.json. No automatic pushes.
+other projects need verification commands in bsa.json. Push requires explicit configuration.
 State: $XDG_DATA_HOME/bsa (default ~/.local/share/bsa).
 """
 
@@ -93,7 +92,16 @@ do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             print(String(decoding: try encoder.encode(Configuration.load(repository: Repository(at: directory))), as: UTF8.self))
-        case "doctor", "harnesses":
+        case "harnesses":
+            guard args.count == 1 else { throw BSAError.message("harnesses takes no options") }
+            for adapter in Harnesses.builtins {
+                do {
+                    try adapter.detect(in: directory)
+                    print("\(adapter.name): available")
+                } catch { print("\(adapter.name): unavailable (\(error))") }
+            }
+        case "doctor":
+            guard args.count == 1 else { throw BSAError.message("doctor takes no options") }
             let configuration = try Configuration.load(repository: Repository(at: directory))
             let harness = try Harnesses.select(configuration: configuration, directory: directory)
             try harness.detect(in: directory)

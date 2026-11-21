@@ -77,11 +77,13 @@ struct CommandAdapter: HarnessAdapter {
 }
 
 public enum Harnesses {
-    public static func select(configuration: Configuration, directory: URL) throws -> any HarnessAdapter {
-        let adapters: [any HarnessAdapter] = [CodexAdapter(),
+    public static var builtins: [any HarnessAdapter] { [CodexAdapter(),
             CommandAdapter(name: "claude", arguments: ["claude", "--print", "--permission-mode", "acceptEdits", "{prompt}"]),
             CommandAdapter(name: "pi", arguments: ["pi", "--print", "--no-session", "{prompt}"]),
             CommandAdapter(name: "opencode", arguments: ["opencode", "run", "{prompt}"])]
+    }
+    public static func select(configuration: Configuration, directory: URL) throws -> any HarnessAdapter {
+        let adapters = builtins
         if configuration.harness == "custom" {
             guard let command = configuration.customCommand, let executable = command.first, !executable.isEmpty, !executable.hasPrefix("-"), !executable.contains("="), (executable.hasPrefix("/") || !executable.contains("/")), command.dropFirst().contains(where: { $0.contains("{prompt}") }) else { throw BSAError.message("customCommand requires an executable and {prompt} argument") }
             return CommandAdapter(name: "custom", arguments: command)
