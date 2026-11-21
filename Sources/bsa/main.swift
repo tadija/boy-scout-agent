@@ -9,7 +9,8 @@ import Darwin
 let help = """
 Boy Scout Agent — one run, one improvement, one commit.
 
-Usage: bsa run [--count N] [--harness NAME] [--branch NAME] [--base REV]
+Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV]
+       bsa history
        bsa status
        bsa --help
 
@@ -29,12 +30,15 @@ do {
         switch args[0] {
         case "run":
             var configuration = try Configuration.load(repository: Repository(at: directory))
+            var deadline: Date?
             var index = 1
             while index < args.count {
-                guard ["--branch", "--base", "--count", "--harness"].contains(args[index]), index + 1 < args.count else {
+                guard ["--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
                     throw BSAError.message("Unknown or incomplete option: \(args[index]). See bsa --help.")
                 }
-                if args[index] == "--branch" { configuration.branch = args[index + 1] }
+                if args[index] == "--duration" { deadline = Date().addingTimeInterval(try ExecutionWindow.duration(args[index + 1])) }
+                else if args[index] == "--until" { deadline = try ExecutionWindow.until(args[index + 1]) }
+                else if args[index] == "--branch" { configuration.branch = args[index + 1] }
                 else if args[index] == "--base" { configuration.base = args[index + 1] }
                 else if args[index] == "--harness" { configuration.harness = args[index + 1] }
                 else {
@@ -45,7 +49,7 @@ do {
             }
             let harness = try Harnesses.select(configuration: configuration, directory: directory)
             print("Harness: \(harness.name). Up to \(configuration.maxIterations) isolated iterations…")
-            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness) { record in
+            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness, deadline: deadline) { record in
                 print("\(record.outcome) on \(record.branch)\(record.commit.map { " (\($0))" } ?? "")")
                 if let detail = record.detail { print(detail) }
             }
@@ -62,6 +66,11 @@ do {
             }
             if record.terminal == true { exit(1) }
             if !["committed", "no_candidate"].contains(record.outcome) { exit(record.outcome == "cancelled" ? 130 : 1) }
+        case "history":
+            guard args.count == 1 else { throw BSAError.message("history takes no options") }
+            for record in try runner.history(at: directory) {
+                print("\(record.started) \(record.outcome) \(record.branch) \(record.commit ?? "") [\(record.id)]")
+            }
         case "status":
             guard args.count == 1 else { throw BSAError.message("status takes no options") }
             if let record = try runner.status(at: directory) {

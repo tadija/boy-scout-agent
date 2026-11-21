@@ -8,8 +8,16 @@ public final class Runner {
         try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory).latest
     }
 
+    public func history(at directory: URL, dataDirectory: URL? = nil) throws -> [Record] {
+        let store = try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory)
+        return try FileManager.default.contentsOfDirectory(at: store.directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" && !["latest.json", "branches.json"].contains($0.lastPathComponent) }
+            .map { try JSONDecoder().decode(Record.self, from: Data(contentsOf: $0)) }
+            .sorted { $0.started > $1.started }
+    }
+
     public func runSession(at directory: URL, configuration: Configuration, harness: any HarnessAdapter,
-                           dataDirectory: URL? = nil, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
+                           dataDirectory: URL? = nil, deadline: Date? = nil, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
         try configuration.validate()
         let repo = try Repository(at: directory)
         let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
@@ -21,8 +29,10 @@ public final class Runner {
         var failures = 0
         var empty = 0
         for _ in 0..<configuration.maxIterations {
-            if Cancellation.requested != 0 { break }
-            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID)
+            if Cancellation.requested != 0 || deadline.map({ Date() >= $0 }) == true { break }
+            var bounded = configuration
+            if let deadline { bounded.timeoutSeconds = min(bounded.timeoutSeconds, max(0.001, deadline.timeIntervalSinceNow)) }
+            let record = try iteration(repo: repo, config: bounded, harness: harness, store: store, sessionID: sessionID)
             records.append(record)
             onIteration(record)
             failures = ["committed", "no_candidate"].contains(record.outcome) ? 0 : failures + 1
@@ -49,7 +59,14 @@ public final class Runner {
                            store: StateStore, sessionID: String) throws -> Record {
         let history = try store.latest
         if let previous = history, previous.outcome == "running" {
-            throw BSAError.message("Interrupted session \(previous.id). Inspect \(store.directory.path) and its worktree before starting again; automatic recovery is deferred to stage 3.")
+            var recovered = previous
+            if let commit = previous.commit, repo.ref("refs/heads/" + previous.branch) == commit {
+                recovered.outcome = "committed"
+                try store.own(branch: previous.branch, commit: commit)
+            } else { recovered.outcome = "interrupted" }
+            recovered.finished = Date()
+            recovered.detail = "Recovered after interruption. Abandoned worktrees are preserved at " + store.directory.path
+            try store.save(recovered)
         }
         let base = try repo.git(["rev-parse", "--verify", "--end-of-options", (config.base ?? "HEAD") + "^{commit}"])
         let slug = repo.root.lastPathComponent.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? String($0) : "-" }.joined()
