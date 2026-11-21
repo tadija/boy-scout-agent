@@ -50,12 +50,35 @@ struct StateStore {
             String(identity.dropFirst(offset).prefix(100))
         }
         let environment = ProcessInfo.processInfo.environment
-        let base = dataDirectory ?? URL(fileURLWithPath: environment["XDG_DATA_HOME"] ??
+        let xdgData = environment["XDG_DATA_HOME"].flatMap { $0.hasPrefix("/") ? $0 : nil }
+        let base = dataDirectory ?? URL(fileURLWithPath: xdgData ??
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share").path).appendingPathComponent("bsa")
         directory = components.reduce(base.appendingPathComponent("repositories")) { $0.appendingPathComponent($1) }
+        let statePath = Self.canonicalPath(for: directory)
+        for field in try repository.worktreeFields() where field.hasPrefix("worktree ") {
+            let checkout = URL(fileURLWithPath: String(field.dropFirst("worktree ".count)))
+                .standardizedFileURL.resolvingSymlinksInPath().path
+            guard statePath != checkout, !statePath.hasPrefix(checkout == "/" ? "/" : checkout + "/") else {
+                throw BSAError.message("BSA data directory must be outside all repository worktrees")
+            }
+        }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                attributes: [.posixPermissions: 0o700])
     }
+    private static func canonicalPath(for directory: URL) -> String {
+        // Foundation can only resolve symlinks reliably on the existing prefix.
+        let url = directory.standardizedFileURL
+        var ancestor = url
+        var suffix: [String] = []
+        while !FileManager.default.fileExists(atPath: ancestor.path), ancestor.path != "/" {
+            suffix.append(ancestor.lastPathComponent)
+            ancestor.deleteLastPathComponent()
+        }
+        return suffix.reversed().reduce(ancestor.resolvingSymlinksInPath()) {
+            $0.appendingPathComponent($1)
+        }.path
+    }
+
     var latest: Record? {
         get throws {
             let url = directory.appendingPathComponent("latest.json")

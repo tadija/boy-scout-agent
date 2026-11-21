@@ -344,4 +344,52 @@ final class RunnerTests: XCTestCase {
         XCTAssertThrowsError(try run { _ in XCTFail("Must not resume with corrupt history"); return self.success() })
     }
 
+    func testFinalVerificationCannotRelyOnIgnoredHarnessArtifacts() throws {
+        try write(".gitignore", "local-input.txt\n")
+        try git(["add", ".gitignore"])
+        try git(["commit", "-m", "Ignore local input"])
+        let baseline = try git(["rev-parse", "HEAD"])
+
+        var config = Configuration()
+        config.verification = ["test $(cat value.txt) = before || test -f local-input.txt"]
+        let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+            try self.write("value.txt", "after\n", at: cwd)
+            try self.write("local-input.txt", "local input\n", at: cwd)
+            return self.success()
+        }, dataDirectory: data)
+
+        XCTAssertEqual(record.outcome, "verification_failed", record.detail ?? "")
+        XCTAssertEqual(try git(["rev-list", "--all", "-1"]), baseline)
+        XCTAssertTrue(try git(["branch", "--list", record.branch]).isEmpty)
+        XCTAssertEqual(try git(["worktree", "list", "--porcelain"]).components(separatedBy: "worktree ").count, 2)
+    }
+
+    func testTrackedBuildChangesAreRejected() throws {
+        try FileManager.default.createDirectory(at: checkout.appendingPathComponent(".build"), withIntermediateDirectories: true)
+        try write(".build/tracked.txt", "original\n")
+        try git(["add", "-f", ".build/tracked.txt"])
+        try git(["commit", "-m", "Track a build fixture"])
+        let record = try run { cwd in
+            try self.write(".build/tracked.txt", "changed\n", at: cwd)
+            try self.write("value.txt", "after\n", at: cwd)
+            return self.success()
+        }
+        XCTAssertEqual(record.outcome, "rejected")
+        XCTAssertTrue(try git(["branch", "--list", record.branch]).isEmpty)
+    }
+
+    func testRefusesDataDirectoryInsideCheckoutBeforeWritingState() throws {
+        let inside = checkout.appendingPathComponent("state")
+        let alias = temporary.appendingPathComponent("checkout-alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: checkout)
+        for location in [inside, alias.appendingPathComponent("state")] {
+            XCTAssertThrowsError(try Runner().run(at: checkout, harness: FakeHarness { _ in
+                XCTFail("Harness should not run")
+                return self.success()
+            }, dataDirectory: location))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: inside.path))
+        XCTAssertTrue(try git(["status", "--porcelain"]).isEmpty)
+    }
+
 }

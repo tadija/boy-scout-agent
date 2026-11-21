@@ -252,12 +252,15 @@ The canonical specification filename is `Docs/Specs/bsa-v1-specs.md` (the stage 
   global config and custom rule/glob configuration are deferred to stage 2.
   Unknown keys, wrong types and invalid limits are errors. Repository config comes
   from the invoking checkout; implementation comes from the committed baseline.
-- Swift packages detect `swift test`; root `.build` products are excluded from staging. Other projects must configure meaningful checks;
-  conservative diff checks alone never authorize a commit. All final checks must
-  pass. Baseline failures are recorded and can be resolved by the improvement.
+- Swift packages use `swift test` by default. Staging excludes untracked files in
+  the root `.build` directory. Other projects must configure meaningful checks,
+  and all final checks must pass. BSA records baseline failures so the improvement
+  can address them.
 - BSA uses a new detached worktree for every attempt, rather than reusing potentially
-  stale content. The target branch is published only after verification using
-  `commit-tree` plus compare-and-swap `update-ref`. This avoids hooks/index operations
+  stale content. Final verification materializes the proposed Git tree in a separate
+  fresh worktree, without ignored or generated files from implementation. After
+  verification, BSA publishes the target branch using `commit-tree` and
+  compare-and-swap `update-ref`. This avoids hooks/index operations
   changing verified contents during commit. Failed ref publication can leave an
   unreachable commit object, but no accepted branch commit. Hooks are disabled on
   BSA Git operations. Default base is the invoking HEAD; target is `bsa/<slug>`.

@@ -23,6 +23,8 @@ public struct CommandResult {
     public let status: Int32
     public let output: String
     public let timedOut: Bool
+    var outputTruncated = false
+    var outputIsUTF8 = true
 }
 
 /// Files rather than pipes avoid deadlocks when a child produces large output.
@@ -55,7 +57,7 @@ public final class CommandRunner {
             }
         }
         guard spawnResult == 0 else { throw BSAError.message("Cannot launch \(executable): \(String(cString: strerror(spawnResult)))") }
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
         var expired = false
         var status: Int32 = 0
         while true {
@@ -65,12 +67,12 @@ public final class CommandRunner {
                 if errno == EINTR { continue }
                 throw BSAError.message("Cannot wait for child process")
             }
-            if Date() >= deadline || (cancellable && Cancellation.requested != 0) {
-                expired = Date() >= deadline
+            if ProcessInfo.processInfo.systemUptime >= deadline || (cancellable && Cancellation.requested != 0) {
+                expired = ProcessInfo.processInfo.systemUptime >= deadline
                 kill(-pid, SIGTERM)
-                let grace = Date().addingTimeInterval(1)
+                let grace = ProcessInfo.processInfo.systemUptime + 1
                 var reaped = false
-                while Date() < grace {
+                while ProcessInfo.processInfo.systemUptime < grace {
                     if waitpid(pid, &status, WNOHANG) == pid { reaped = true; break }
                     Thread.sleep(forTimeInterval: 0.02)
                 }
@@ -88,9 +90,10 @@ public final class CommandRunner {
         defer { try? reader.close() }
         let size = try reader.seekToEnd()
         try reader.seek(toOffset: size > 1_048_576 ? size - 1_048_576 : 0)
-        let data = try reader.readToEnd() ?? Data()
+        let data = try reader.read(upToCount: 1_048_576) ?? Data()
         let exitCode: Int32 = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
         return CommandResult(status: exitCode,
-                             output: String(decoding: data.suffix(1_048_576), as: UTF8.self), timedOut: expired)
+                             output: String(decoding: data, as: UTF8.self), timedOut: expired,
+                             outputTruncated: size > 1_048_576, outputIsUTF8: String(data: data, encoding: .utf8) != nil)
     }
 }

@@ -32,7 +32,8 @@ git diff main...bsa/my-project
 ```
 
 Swift packages automatically use `swift test` before and after the improvement.
-Root `.build` products are excluded from staging even without a `.gitignore`.
+Untracked files in the root `.build` directory are excluded from staging, even
+without a `.gitignore`.
 Other projects need explicit verification (below). Runs include committed files
 only; staged, unstaged, and untracked files in your checkout remain untouched.
 The repository's current HEAD is the default base. Subsequent runs continue on
@@ -86,10 +87,11 @@ custom rules, history commands, and automatic crash recovery belong to later sta
 
 An exclusive OS lock in the common Git directory prevents overlapping BSA runs,
 including runs through linked worktrees and different data directories. A detached
-worktree lives outside the checkout. BSA checks HEAD and repository refs after the
-harness and verification, stages the complete diff, validates paths and diff, and
-requires verification to leave the proposed tree unchanged. Only then does it
-create a commit object and atomically publish the branch. Failed publication can
+worktree lives outside the checkout. BSA checks HEAD and repository refs, stages
+and validates the diff, then checks the proposed Git tree in a second, fresh
+worktree. Ignored files and build products from the harness are absent from final
+verification. BSA creates the commit and atomically publishes the branch after
+all checks pass and confirm the proposed tree is unchanged. Failed publication can
 leave an unreachable commit object; it never rewrites a branch or creates a
 second published commit. Git hooks are disabled for BSA's Git operations so hooks
 cannot silently alter the verified content or run during publication.
@@ -130,10 +132,11 @@ and robust secret redaction are deferred; don't print secrets in checks.
 - **Git author missing:** configure `git config user.name` and `git config user.email`.
 - **Branch changed/diverged:** inspect it and choose a fresh `--branch`; BSA never rebases it.
 - **Interrupted session:** automatic recovery is deferred. The error gives the state
-  directory. Inspect its `latest.json`, candidate SHA, Git refs, and `worktree-<id>`.
+  directory. Inspect its `latest.json`, candidate SHA, Git refs, and any
+  `worktree-<id>` or `verify-<id>` directories.
   If the candidate SHA equals the target ref, publication happened: preserve that
-  commit. Otherwise it was never accepted. After inspection, remove only that BSA
-  worktree with `git worktree remove --force <path>`. Archive the state directory
+  commit. Otherwise it was never accepted. After inspection, remove only those BSA
+  worktrees with `git worktree remove --force <path>`. Archive the state directory
   and choose a new branch for the next run; existing BSA branches cannot be adopted
   without their ownership records. Do not remove another process's worktree.
 - **Another run holds the lock:** wait for that process. OS locks release on exit;

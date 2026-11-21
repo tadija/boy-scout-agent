@@ -17,11 +17,12 @@ public final class Runner {
         // The lock lives in Git's common directory so different data roots cannot bypass it.
         let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
         defer { lock.release() }
-        if let previous = try store.latest, previous.outcome == "running" {
+        let history = try store.latest
+        if let previous = history, previous.outcome == "running" {
             throw BSAError.message("Interrupted session \(previous.id). Inspect \(store.directory.path) and its worktree before starting again; automatic recovery is deferred to stage 3.")
         }
         try harness.detect(in: repo.root)
-        let base = try repo.git(["rev-parse", "--verify", (config.base ?? "HEAD") + "^{commit}"])
+        let base = try repo.git(["rev-parse", "--verify", "--end-of-options", (config.base ?? "HEAD") + "^{commit}"])
         let slug = repo.root.lastPathComponent.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? String($0) : "-" }.joined()
         let branch = config.branch ?? "bsa/\(slug)"
         _ = try repo.git(["check-ref-format", "--branch", branch])
@@ -39,30 +40,22 @@ public final class Runner {
         if let originalTarget, !repo.isAncestor(base, originalTarget) {
             throw BSAError.message("BSA branch diverged from the configured base. Resolve it manually; BSA never rewrites history.")
         }
-        // Ref publication must not move the HEAD of any existing worktree.
-        let worktrees = try repo.git(["worktree", "list", "--porcelain"])
-        guard !worktrees.components(separatedBy: "\n").contains("branch " + target) else {
-            throw BSAError.message("Target branch is checked out in a worktree; switch it away before running")
-        }
+        try repo.requireUncheckedOut(target)
         let id = UUID().uuidString.lowercased()
         let worktree = store.directory.appendingPathComponent("worktree-" + id)
         var record = Record(id: id, repository: repo.root.path, branch: branch, started: Date(), outcome: "running", baseline: baseline)
-        let history = try store.latest
         try store.save(record)
-        var added = false
-        defer {
-            if added { _ = try? repo.git(["worktree", "remove", "--force", worktree.path]) }
-        }
-        let deadline = Date().addingTimeInterval(config.timeoutSeconds)
-        func remaining() -> TimeInterval { max(0.001, deadline.timeIntervalSinceNow) }
+        var worktrees: [URL] = []
+        let deadline = ProcessInfo.processInfo.systemUptime + config.timeoutSeconds
+        func remaining() -> TimeInterval { max(0.001, deadline - ProcessInfo.processInfo.systemUptime) }
         func checkBudget() throws {
             if Cancellation.requested != 0 { throw BSAError.message("cancelled") }
-            if Date() >= deadline { throw BSAError.message("timed_out") }
+            if ProcessInfo.processInfo.systemUptime >= deadline { throw BSAError.message("timed_out") }
         }
-        func checks(_ values: [String], baseline: Bool) throws {
+        func checks(_ values: [String], at directory: URL, baseline: Bool) throws {
             for command in values {
                 try checkBudget()
-                let output = try commands.run("/bin/sh", ["-c", command], cwd: worktree, timeout: remaining())
+                let output = try commands.run("/bin/sh", ["-c", command], cwd: directory, timeout: remaining())
                 let check = Check(command: command, status: output.status, output: output.output)
                 if baseline { record.baselineChecks.append(check) }
                 else { record.checks.append(check) }
@@ -71,22 +64,31 @@ public final class Runner {
                 if output.timedOut { throw BSAError.message("timed_out") }
             }
         }
-        func stage() throws {
-            // Enumerate eligible files first: Git add treats explicit ignored exclusions
-            // as errors on some Git versions. NUL pathspecs also preserve unusual names.
-            let files = try repo.git(["ls-files", "--cached", "--others", "--exclude-standard", "-z",
-                                      "--", ".", ":(exclude).build"], at: worktree)
-            guard !files.isEmpty else { return }
+        func addWorktree(_ directory: URL) throws {
+            try repo.git(["worktree", "add", "--detach", directory.path, baseline])
+            worktrees.append(directory)
+        }
+        func stage(at directory: URL) throws {
+            // Git add reports errors for explicit ignored exclusions on some versions.
+            let tracked = try repo.git(["ls-files", "-v", "-z"], at: directory)
+            let paths = try tracked.split(separator: "\0").map { entry in
+                guard entry.hasPrefix("H ") else {
+                    throw BSAError.message("Unsupported index entry in isolated worktree")
+                }
+                return String(entry.dropFirst(2)) + "\0"
+            }.joined()
+            let untracked = try repo.git(["ls-files", "--others", "--exclude-standard", "-z",
+                                          "--", ".", ":(exclude).build"], at: directory)
+            guard !paths.isEmpty || !untracked.isEmpty else { return }
             let pathspec = store.directory.appendingPathComponent("paths-" + id)
             defer { try? FileManager.default.removeItem(at: pathspec) }
-            try Data(files.utf8).write(to: pathspec, options: .atomic)
+            try Data((paths + untracked).utf8).write(to: pathspec, options: .atomic)
             try repo.git(["--literal-pathspecs", "add", "--all", "--pathspec-file-nul",
-                          "--pathspec-from-file=" + pathspec.path], at: worktree)
+                          "--pathspec-from-file=" + pathspec.path], at: directory)
         }
         do {
             try checkBudget()
-            try repo.git(["worktree", "add", "--detach", worktree.path, baseline])
-            added = true
+            try addWorktree(worktree)
             let refs = try repo.refs()
             let verification: [String]
             if let configured = config.verification { verification = configured }
@@ -95,12 +97,20 @@ public final class Runner {
             guard !verification.isEmpty else {
                 throw BSAError.message("No meaningful verification detected. Configure verification commands in bsa.json (Swift packages use swift test automatically).")
             }
-            try checks(verification, baseline: true)
-            // Baseline checks must not modify source files or HEAD; Swift build products are excluded.
-            guard try repo.git(["status", "--porcelain", "--", ".", ":(exclude).build"], at: worktree).isEmpty,
-                  repo.ref("HEAD") != nil,
-                  try repo.git(["rev-parse", "HEAD"], at: worktree) == baseline,
-                  try repo.refs() == refs else { throw BSAError.message("Baseline checks mutated Git state") }
+            func assertGit(at directory: URL) throws {
+                guard try repo.git(["rev-parse", "HEAD"], at: directory) == baseline,
+                      try repo.git(["rev-parse", "--abbrev-ref", "HEAD"], at: directory) == "HEAD",
+                      try repo.refs() == refs else {
+                    throw BSAError.message("Harness or checks changed HEAD or repository refs")
+                }
+            }
+            try checks(verification, at: worktree, baseline: true)
+            try assertGit(at: worktree)
+            try stage(at: worktree)
+            guard try repo.git(["diff", "--cached", "--name-only"], at: worktree).isEmpty else {
+                throw BSAError.message("Baseline checks modified repository files")
+            }
+            try checkBudget()
             let response: CommandResult
             do {
                 response = try harness.run(prompt: Planner.prompt(history: history.map {
@@ -114,41 +124,38 @@ public final class Runner {
             try checkBudget()
             if response.timedOut { throw BSAError.message("timed_out") }
             guard response.status == 0 else { record.outcome = "harness_failed"; throw BSAError.message("Harness exited \(response.status): \(response.output.suffix(2000))") }
-            func assertGit() throws {
-                guard try repo.git(["rev-parse", "HEAD"], at: worktree) == baseline,
-                      try repo.git(["rev-parse", "--abbrev-ref", "HEAD"], at: worktree) == "HEAD",
-                      try repo.refs() == refs else { throw BSAError.message("Harness or checks changed HEAD or repository refs") }
-            }
-            try assertGit()
-            try stage()
-            func paths() throws -> [String] {
-                try repo.git(["diff", "--cached", "--no-renames", "--name-only", "-z"], at: worktree).split(separator: "\0").map(String.init)
-            }
-            record.paths = try paths()
+            try assertGit(at: worktree)
+            try stage(at: worktree)
+            record.paths = try repo.git(["diff", "--cached", "--no-renames", "--name-only", "-z"], at: worktree)
+                .split(separator: "\0").map(String.init)
             if record.paths.isEmpty { record.outcome = "no_candidate" }
             else {
                 try validate(paths: record.paths, repository: repo, worktree: worktree, limit: config.maxChangedFiles)
                 let tree = try repo.git(["write-tree"], at: worktree)
-                try checks(verification, baseline: false)
-                try assertGit()
+                _ = try repo.git(["diff", "--cached", "--check"], at: worktree)
+                try checkBudget()
+                let verificationTree = store.directory.appendingPathComponent("verify-" + id)
+                try addWorktree(verificationTree)
+                try repo.git(["read-tree", "--reset", "-u", tree], at: verificationTree)
+                try checks(verification, at: verificationTree, baseline: false)
+                try assertGit(at: verificationTree)
                 guard record.checks.allSatisfy({ $0.status == 0 }) else {
                     record.outcome = "verification_failed"
                     throw BSAError.message("Required verification failed; no commit created")
                 }
-                try stage()
-                guard try repo.git(["write-tree"], at: worktree) == tree else { throw BSAError.message("Verification modified the proposed change") }
-                _ = try repo.git(["diff", "--cached", "--check"], at: worktree)
-                try checkBudget()
-                let currentWorktrees = try repo.git(["worktree", "list", "--porcelain"])
-                guard !currentWorktrees.components(separatedBy: "\n").contains("branch " + target) else {
-                    throw BSAError.message("Target branch was checked out during the iteration")
+                try stage(at: verificationTree)
+                guard try repo.git(["write-tree"], at: verificationTree) == tree else {
+                    throw BSAError.message("Verification modified the proposed change")
                 }
+                try checkBudget()
+                try repo.requireUncheckedOut(target)
                 let summary = response.output.split(separator: "\n").first.map { String($0.prefix(100)) } ?? "Improve repository"
                 let commit = try repo.git(["commit-tree", tree, "-p", baseline, "-m", "bsa: " + summary], at: worktree)
                 // Persist the candidate before publication so an interrupted record is auditable.
                 record.commit = commit
                 try store.save(record)
-                try repo.git(["update-ref", target, commit, originalTarget ?? String(repeating: "0", count: baseline.count)])
+                try checkBudget()
+                try repo.git(["update-ref", "--no-deref", target, commit, originalTarget ?? String(repeating: "0", count: baseline.count)])
                 record.outcome = "committed"
                 try store.own(branch: branch, commit: commit)
             }
@@ -159,12 +166,11 @@ public final class Runner {
             }
             record.detail = String(describing: error)
         }
-        if added {
+        for directory in worktrees.reversed() {
             do {
-                try repo.git(["worktree", "remove", "--force", worktree.path])
-                added = false
+                try repo.git(["worktree", "remove", "--force", directory.path])
             } catch {
-                record.detail = (record.detail.map { $0 + "\n" } ?? "") + "Cleanup failed; inspect \(worktree.path): \(error)"
+                record.detail = (record.detail.map { $0 + "\n" } ?? "") + "Cleanup failed; inspect \(directory.path): \(error)"
             }
         }
         record.finished = Date()
