@@ -69,8 +69,9 @@ do {
                     break
                 }
             }
+            if record.outcome == "cancelled" { exit(130) }
             if record.terminal == true { exit(1) }
-            if !["committed", "no_candidate"].contains(record.outcome) { exit(record.outcome == "cancelled" ? 130 : 1) }
+            if !["committed", "no_candidate"].contains(record.outcome) { exit(1) }
         case "schedule":
             let scheduler = try Scheduler()
             if args == ["schedule", "list"] {

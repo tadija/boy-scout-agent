@@ -71,4 +71,30 @@ schedule_id=$(awk '{print $1}' "$fixture/schedules")
 [ ! -s "$fixture/schedules" ]
 if "$bsa" run --until 25:00 > "$fixture/invalid" 2>&1; then exit 1; fi
 if "$bsa" stop > "$fixture/stop" 2>&1; then exit 1; fi
+# Synchronize on an actual partial edit before requesting cancellation.
+cat > "$fixture/bin/slow-agent" <<'AGENT'
+#!/bin/sh
+printf 'partial edit\n' > value.txt
+touch "$BSA_TEST_READY"
+sleep 60
+AGENT
+chmod +x "$fixture/bin/slow-agent"
+export BSA_TEST_READY="$fixture/ready"
+printf '%s\n' '{"harness":"custom","customCommand":["slow-agent","{prompt}"],"verification":["true"]}' > bsa.json
+"$bsa" run > "$fixture/slow" 2>&1 &
+active=$!
+attempt=0
+until [ -f "$BSA_TEST_READY" ]; do
+  kill -0 "$active" || exit 1
+  attempt=$((attempt + 1))
+  [ "$attempt" -lt 200 ] || exit 1
+  sleep 0.1
+done
+if "$bsa" run > "$fixture/overlap" 2>&1; then exit 1; fi
+grep -q 'holds this repository' "$fixture/overlap"
+"$bsa" stop
+if wait "$active"; then exit 1; fi
+grep -q 'cancelled on' "$fixture/slow"
+[ "$(git rev-list --all --count)" = 2 ]
+[ "$(cat value.txt)" = 'uncommitted user work' ]
 printf 'CLI smoke test passed\n'
