@@ -50,6 +50,39 @@ final class RunnerTests: XCTestCase {
         XCTAssertEqual(try git(["worktree", "list", "--porcelain"]).components(separatedBy: "worktree ").count, 2)
     }
 
+    func testScheduleLifecyclePreservesRepository() throws {
+        let scheduler = try Scheduler(dataDirectory: data)
+        let schedule = try scheduler.add(repository: checkout, executable: "/usr/local/bin/bsa", at: "00:00", duration: "4h")
+        XCTAssertEqual(try scheduler.list().map(\.id), [schedule.id])
+        let script = try String(contentsOf: scheduler.directory.appendingPathComponent(schedule.id + ".sh"), encoding: .utf8)
+        XCTAssertFalse(script.contains("--count"))
+        XCTAssertTrue(script.contains("--duration '4h'"))
+        XCTAssertTrue(script.contains(checkout.path))
+        XCTAssertThrowsError(try scheduler.remove("../unknown"))
+        try scheduler.remove(schedule.id)
+        XCTAssertTrue(try scheduler.list().isEmpty)
+        XCTAssertEqual(try git(["status", "--porcelain"]), "")
+    }
+    func testExpiredDeadlineDoesNotInvokeHarness() throws {
+        let config = try Configuration.load(repository: Repository(at: checkout))
+        let records = try Runner().runSession(at: checkout, configuration: config,
+            harness: FakeHarness { _ in XCTFail("Expired session invoked harness"); return self.success() },
+            dataDirectory: data, deadline: Date(timeIntervalSinceNow: -1))
+        XCTAssertTrue(records.isEmpty)
+        try assertNoCommit()
+    }
+    func testStopWithoutActiveSessionIsRejected() throws {
+        XCTAssertThrowsError(try Runner().stop(at: checkout))
+    }
+    func testStopMarkerCancelsActiveCommand() throws {
+        let marker = temporary.appendingPathComponent("stop")
+        try Data().write(to: marker)
+        Cancellation.stopFile = marker
+        defer { Cancellation.stopFile = nil }
+        let start = Date()
+        _ = try commands.run("/bin/sh", ["-c", "sleep 30"], cwd: checkout)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
+    }
     func testSessionStopsAtSaturation() throws {
         var config = try Configuration.load(repository: Repository(at: checkout))
         config.maxIterations = 100
@@ -135,6 +168,16 @@ final class RunnerTests: XCTestCase {
         XCTAssertNotEqual(record.baselineChecks.first?.status, 0)
         XCTAssertEqual(record.checks.first?.status, 0)
     }
+    func testConfiguredProtectedGlobBlocksPublication() throws {
+        try write("bsa.json", #"{"verification":["true"],"protectedPaths":["*.txt"]}"#)
+        let record = try run { cwd in
+            try self.write("value.txt", "changed", at: cwd)
+            return self.success()
+        }
+        XCTAssertEqual(record.outcome, "rejected")
+        XCTAssertTrue(record.detail?.contains("Configured protected path") == true)
+        try assertNoCommit()
+    }
     func testProtectedPathIsRejected() throws {
         let record = try run { cwd in
             try self.write(".env", "PASSWORD=private", at: cwd)
@@ -164,7 +207,11 @@ final class RunnerTests: XCTestCase {
             return self.success()
         }
         XCTAssertEqual(record.outcome, "cancelled")
-        try assertNoCommit()
+        XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "1")
+        Cancellation.requested = 0
+        let store = try StateStore(repository: Repository(at: checkout), dataDirectory: data)
+        let partial = store.directory.appendingPathComponent("worktree-" + record.id).appendingPathComponent("value.txt")
+        XCTAssertEqual(try String(contentsOf: partial, encoding: .utf8), "after\n")
     }
     func testMissingVerificationRefusesBeforeHarness() throws {
         try FileManager.default.removeItem(at: checkout.appendingPathComponent("bsa.json"))
@@ -198,11 +245,14 @@ final class RunnerTests: XCTestCase {
         defer { lock.release() }
         XCTAssertThrowsError(try run { _ in self.success() })
     }
-    func testInterruptedRecordBlocksUnsafeRestart() throws {
+    func testInterruptedRecordIsReconciledBeforeRestart() throws {
         let repo = try Repository(at: checkout)
         let store = try StateStore(repository: repo, dataDirectory: data)
         try store.save(Record(id: "interrupted-test", repository: checkout.path, branch: "bsa/project", started: Date(), outcome: "running"))
-        XCTAssertThrowsError(try run { _ in XCTFail("Must not resume blindly"); return self.success() })
+        let record = try run { _ in self.success() }
+        XCTAssertEqual(record.outcome, "no_candidate")
+        let recovered = try JSONDecoder().decode(Record.self, from: Data(contentsOf: store.directory.appendingPathComponent("interrupted-test.json")))
+        XCTAssertEqual(recovered.outcome, "interrupted")
     }
     func testVerificationCannotModifyProposedChange() throws {
         var configuration = Configuration()

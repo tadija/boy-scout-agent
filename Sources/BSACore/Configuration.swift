@@ -1,8 +1,10 @@
 import Foundation
 
 public struct Configuration: Codable {
+    public var push: Bool = false
     public var harness: String?
     public var customCommand: [String]?
+    public var protectedPaths: [String] = []
     public var instructions: String = ""
     public var maxIterations: Int = 1
     public var failureLimit: Int = 3
@@ -15,15 +17,20 @@ public struct Configuration: Codable {
     public init() {}
 
     public static func load(repository: Repository) throws -> Configuration {
-        let url = repository.root.appendingPathComponent("bsa.json")
-        guard FileManager.default.fileExists(atPath: url.path) else { return Configuration() }
-        let data = try Data(contentsOf: url)
-        let object = try JSONSerialization.jsonObject(with: data)
-        guard let dictionary = object as? [String: Any],
-              Set(dictionary.keys).isSubset(of: ["branch", "base", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "instructions", "maxIterations", "failureLimit", "saturationLimit"]) else {
+        let configBase = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config").path
+        let urls = [URL(fileURLWithPath: configBase).appendingPathComponent("bsa/config.json"), repository.root.appendingPathComponent("bsa.json")]
+        var dictionary: [String: Any] = [:]
+        for url in urls where FileManager.default.fileExists(atPath: url.path) {
+            guard let values = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] else {
+                throw BSAError.message("Configuration must be a JSON object: " + url.path)
+            }
+            dictionary.merge(values) { _, new in new }
+        }
+        guard
+              Set(dictionary.keys).isSubset(of: ["branch", "base", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "instructions", "maxIterations", "failureLimit", "saturationLimit", "push", "protectedPaths"]) else {
             throw BSAError.message("bsa.json contains unknown keys or is not an object")
         }
-        let defaults: [String: Any] = ["timeoutSeconds": 1800, "maxChangedFiles": 12, "instructions": "", "maxIterations": 1, "failureLimit": 3, "saturationLimit": 2]
+        let defaults: [String: Any] = ["protectedPaths": [String](), "push": false, "timeoutSeconds": 1800, "maxChangedFiles": 12, "instructions": "", "maxIterations": 1, "failureLimit": 3, "saturationLimit": 2]
         let merged = defaults.merging(dictionary) { _, new in new }
         let configuration = try JSONDecoder().decode(Configuration.self, from: JSONSerialization.data(withJSONObject: merged))
         try configuration.validate()

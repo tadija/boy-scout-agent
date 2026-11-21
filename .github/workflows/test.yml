@@ -21,3 +21,12 @@ jobs:
       - run: swift test
       - run: swift build -c release
       - run: sh Tests/Integration/cli-smoke.sh "$(swift build -c release --show-bin-path)/bsa"
+      - name: Package tested CLI
+        run: |
+          mkdir -p dist/bsa
+          cp "$(swift build -c release --show-bin-path)/bsa" README.md dist/bsa/
+          tar -czf "dist/bsa-$(uname -s)-$(uname -m).tar.gz" -C dist bsa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bsa-${{ matrix.os }}
+          path: dist/*.tar.gz

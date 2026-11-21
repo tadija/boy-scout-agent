@@ -1,4 +1,9 @@
 import Foundation
+#if os(Linux)
+import Glibc
+#else
+import Darwin
+#endif
 
 public final class Runner {
     private let commands = CommandRunner()
@@ -8,21 +13,46 @@ public final class Runner {
         try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory).latest
     }
 
+    public func stop(at directory: URL) throws {
+        let repo = try Repository(at: directory)
+        do {
+            let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
+            lock.release()
+            throw BSAError.message("No active BSA run for this repository")
+        } catch let error as BSAError {
+            guard error.description.contains("Another BSA run") else { throw error }
+        }
+        try Data().write(to: repo.commonDirectory.appendingPathComponent("bsa.stop"), options: .atomic)
+    }
+
+    public func history(at directory: URL, dataDirectory: URL? = nil) throws -> [Record] {
+        let store = try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory)
+        return try FileManager.default.contentsOfDirectory(at: store.directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" && !["latest.json", "branches.json"].contains($0.lastPathComponent) }
+            .map { try JSONDecoder().decode(Record.self, from: Data(contentsOf: $0)) }
+            .sorted { $0.started > $1.started }
+    }
+
     public func runSession(at directory: URL, configuration: Configuration, harness: any HarnessAdapter,
-                           dataDirectory: URL? = nil, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
+                           dataDirectory: URL? = nil, deadline: Date? = nil, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
         try configuration.validate()
         let repo = try Repository(at: directory)
         let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
         defer { sessionLock.release() }
         let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
+        let stop = repo.commonDirectory.appendingPathComponent("bsa.stop")
+        try? FileManager.default.removeItem(at: stop)
+        Cancellation.stopFile = stop
+        defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
         try harness.detect(in: repo.root)
         let sessionID = UUID().uuidString.lowercased()
         var records: [Record] = []
         var failures = 0
         var empty = 0
         for _ in 0..<configuration.maxIterations {
-            if Cancellation.requested != 0 { break }
-            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID)
+            if Cancellation.shouldStop || deadline.map({ Date() >= $0 }) == true { break }
+            let budget = min(configuration.timeoutSeconds, deadline?.timeIntervalSinceNow ?? .infinity)
+            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, deadline: ProcessInfo.processInfo.systemUptime + budget)
             records.append(record)
             onIteration(record)
             failures = ["committed", "no_candidate"].contains(record.outcome) ? 0 : failures + 1
@@ -41,15 +71,26 @@ public final class Runner {
         // The lock lives in Git's common directory so different data roots cannot bypass it.
         let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
         defer { lock.release() }
+        let stop = repo.commonDirectory.appendingPathComponent("bsa.stop")
+        try? FileManager.default.removeItem(at: stop)
+        Cancellation.stopFile = stop
+        defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
         try harness.detect(in: repo.root)
-        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased())
+        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds)
     }
 
     private func iteration(repo: Repository, config: Configuration, harness: any HarnessAdapter,
-                           store: StateStore, sessionID: String) throws -> Record {
+                           store: StateStore, sessionID: String, deadline: TimeInterval) throws -> Record {
         let history = try store.latest
         if let previous = history, previous.outcome == "running" {
-            throw BSAError.message("Interrupted session \(previous.id). Inspect \(store.directory.path) and its worktree before starting again; automatic recovery is deferred to stage 3.")
+            var recovered = previous
+            if let commit = previous.commit, repo.ref("refs/heads/" + previous.branch) == commit {
+                recovered.outcome = "committed"
+                try store.own(branch: previous.branch, commit: commit)
+            } else { recovered.outcome = "interrupted" }
+            recovered.finished = Date()
+            recovered.detail = "Recovered after interruption. Abandoned worktrees are preserved at " + store.directory.path
+            try store.save(recovered)
         }
         let base = try repo.git(["rev-parse", "--verify", "--end-of-options", (config.base ?? "HEAD") + "^{commit}"])
         let slug = repo.root.lastPathComponent.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? String($0) : "-" }.joined()
@@ -78,10 +119,9 @@ public final class Runner {
         record.harness = harness.name
         try store.save(record)
         var worktrees: [URL] = []
-        let deadline = ProcessInfo.processInfo.systemUptime + config.timeoutSeconds
         func remaining() -> TimeInterval { max(0.001, deadline - ProcessInfo.processInfo.systemUptime) }
         func checkBudget() throws {
-            if Cancellation.requested != 0 { throw BSAError.message("cancelled") }
+            if Cancellation.shouldStop { throw BSAError.message("cancelled") }
             if ProcessInfo.processInfo.systemUptime >= deadline { throw BSAError.message("timed_out") }
         }
         func checks(_ values: [String], at directory: URL, baseline: Bool) throws {
@@ -151,7 +191,7 @@ public final class Runner {
                     "Outcome: \($0.outcome). Task: \(($0.task ?? "none").prefix(400)). Detail: \(($0.detail ?? "none").prefix(200))"
                 }.joined(separator: "\n")), cwd: worktree, timeout: remaining())
             } catch {
-                record.outcome = Cancellation.requested != 0 ? "cancelled" : "harness_failed"
+                record.outcome = Cancellation.shouldStop ? "cancelled" : "harness_failed"
                 throw error
             }
             record.task = String(response.output.suffix(8192))
@@ -164,7 +204,7 @@ public final class Runner {
                 .split(separator: "\0").map(String.init)
             if record.paths.isEmpty { record.outcome = "no_candidate" }
             else {
-                try validate(paths: record.paths, repository: repo, worktree: worktree, limit: config.maxChangedFiles)
+                try validate(paths: record.paths, repository: repo, worktree: worktree, limit: config.maxChangedFiles, protectedPaths: config.protectedPaths)
                 let tree = try repo.git(["write-tree"], at: worktree)
                 _ = try repo.git(["diff", "--cached", "--check"], at: worktree)
                 try checkBudget()
@@ -192,6 +232,9 @@ public final class Runner {
                 try repo.git(["update-ref", "--no-deref", target, commit, originalTarget ?? String(repeating: "0", count: baseline.count)])
                 record.outcome = "committed"
                 try store.own(branch: branch, commit: commit)
+                if config.push {
+                    try repo.git(["push", "--", "origin", target + ":" + target])
+                }
             }
         } catch {
             if record.outcome == "running" {
@@ -203,7 +246,12 @@ public final class Runner {
         }
         for directory in worktrees.reversed() {
             do {
-                try repo.git(["worktree", "remove", "--force", directory.path])
+                if ["cancelled", "timed_out"].contains(record.outcome) {
+                    // Plain remove also protects ignored and untracked partial output.
+                    try repo.git(["worktree", "remove", directory.path])
+                } else {
+                    try repo.git(["worktree", "remove", "--force", directory.path])
+                }
             } catch {
                 record.terminal = true
                 record.detail = (record.detail.map { $0 + "\n" } ?? "") + "Cleanup failed; inspect \(directory.path): \(error)"
@@ -214,10 +262,13 @@ public final class Runner {
         return record
     }
 
-    private func validate(paths: [String], repository: Repository, worktree: URL, limit: Int) throws {
+    private func validate(paths: [String], repository: Repository, worktree: URL, limit: Int, protectedPaths: [String]) throws {
         guard paths.count <= limit else { throw BSAError.message("Change exceeds maxChangedFiles") }
         let blocked = [".env", ".git", ".github", "bsa.json", "secrets", "credentials", "package.resolved", "package-lock.json", "yarn.lock", "package.swift", "makefile", "agents.md", "claude.md"]
         for path in paths {
+            guard !protectedPaths.contains(where: { fnmatch($0, path, 0) == 0 }) else {
+                throw BSAError.message("Configured protected path: " + path)
+            }
             let parts = path.lowercased().split(separator: "/").map(String.init)
             guard !parts.contains(where: { part in blocked.contains(part) || part.hasPrefix(".env.") || part.hasSuffix(".pem") || part.hasSuffix(".key") || [".build", "node_modules", "dist", "build"].contains(part) }) else {
                 throw BSAError.message("Protected or generated path: \(path)")
