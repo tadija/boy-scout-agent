@@ -1,4 +1,4 @@
-# Boy Scout Agent — v1 Specification
+# Boy Scout Agent - Specification
 
 ## 1. Product
 
@@ -12,7 +12,7 @@ The goal is sustained, measurable codebase quality improvement, not maximizing c
 
 ## 2. Scope and non-goals
 
-### v1 includes
+### Included
 - Swift CLI for macOS and Linux, with minimal dependencies.
 - Local Git repositories; no Git hosting API requirement.
 - Built-in harness adapters for Codex, Claude Code, Pi, and OpenCode where a supported noninteractive CLI is available, plus configurable custom command adapter.
@@ -22,7 +22,7 @@ The goal is sustained, measurable codebase quality improvement, not maximizing c
 - Persistent run/iteration history, logs, and recovery from interruption.
 - Explicit budgets, timeouts, failure handling, and human-readable status.
 
-### Not in v1
+### Out of scope
 - Native macOS GUI, browser dashboard, hosted service, remote worker orchestration, GitHub/GitLab API integrations, automatic pull requests, multi-user accounts, distributed scheduling, model-provider SDKs, or a custom coding agent.
 
 ## 3. Architecture
@@ -222,114 +222,124 @@ If no executable project checks can be determined, do not pretend the change is 
 
 Each stage should leave a working, testable executable. Keep this specification synchronized with code and document any intentional deviations.
 
-## 16. Stage 1 implementation decisions (November 2026)
+### Prompt 1 — Reliable Core
 
-The implemented stage is the reliable single-iteration core. The preceding sections
-remain the full v1 target; features below explicitly deferred are not implemented yet.
-The canonical specification filename is `Docs/Specs/bsa-v1-specs.md` (the stage prompt's
-`boy-scout-agent-v1-specs.md` reference refers to this document).
+Implement **Stage 1 — Reliable Core** of Boy Scout Agent (BSA), using `Specs.md` as the source of truth.
 
-- Swift package with a small POSIX C spawn shim, no third-party runtime dependencies, Swift 6.0+, macOS 13+ and Linux.
-  Modules cover CLI, configuration, Git, harness, planning, verification, runner and
-  JSON history. Scheduling remains a future concern rather than an empty abstraction.
-- Commands: `bsa run [--branch NAME] [--base REV]`, `bsa status`, and help. Only one
-  iteration per invocation; later multi-iteration/time-window/schedule commands are
-  intentionally rejected rather than accepted without effect.
-- Codex is the only production adapter. The adapter detects the installed `exec`
-  interface and invokes `--ask-for-approval never exec` with
-  `--sandbox workspace-write --cd --output-last-message`.
-  Every iteration is a fresh invocation. Fake adapters and a fake Codex executable
-  exercise the lifecycle without model access. Adapter detection/version compatibility
-  is capability-based; additional adapters and richer usage metadata are deferred.
-- A bounded five-candidate search, priority ranking, single-improvement scope and
-  self-review are prompt instructions. The runner supplies the previous outcome/task
-  to discourage repetition. Structured candidates, exploration scoring and a separate
-  model diff-review invocation are deferred to stage 2. Structural checks remain
-  authoritative but do not prove semantic coherence or detect all weakened tests.
-- Configuration is optional **bsa.json**, not YAML, avoiding a parser dependency.
-  Keys: `base`, `branch`, `verification` (shell-command array), `timeoutSeconds`
-  (default 1800), `maxChangedFiles` (default 12). CLI overrides repository config;
-  global config and custom rule/glob configuration are deferred to stage 2.
-  Unknown keys, wrong types and invalid limits are errors. Repository config comes
-  from the invoking checkout; implementation comes from the committed baseline.
-- Swift packages use `swift test` by default. Staging excludes untracked files in
-  the root `.build` directory. Other projects must configure meaningful checks,
-  and all final checks must pass. BSA records baseline failures so the improvement
-  can address them.
-- BSA uses a new detached worktree for every attempt, rather than reusing potentially
-  stale content. Final verification materializes the proposed Git tree in a separate
-  fresh worktree, without ignored or generated files from implementation. After
-  verification, BSA publishes the target branch using `commit-tree` and
-  compare-and-swap `update-ref`. This avoids hooks/index operations
-  changing verified contents during commit. Failed ref publication can leave an
-  unreachable commit object, but no accepted branch commit. Hooks are disabled on
-  BSA Git operations. Default base is the invoking HEAD; target is `bsa/<slug>`.
-  Branch ownership records reject preexisting/unrelated or externally modified refs;
-  default-name collisions therefore fail safely rather than overwriting a branch.
-- File locks live in Git's common directory, shared by linked worktrees and all
-  data roots; no stale PID heuristic is needed. Mutable JSON records and worktrees
-  live outside the checkout in the XDG data directory, keyed by canonical Git identity.
-  The empty lock file is the sole operational file inside Git metadata.
-- Outcomes and bounded command diagnostics are persisted atomically. Candidate SHAs
-  are recorded before branch publication so a crash can be audited. Stage 1 blocks
-  blind restart of a running/interrupted record; automatic recovery and history CLI
-  remain stage 3. Records are retained without automatic rotation for now.
-- SIGINT/SIGTERM and a whole-iteration timeout terminate active commands, escalating
-  TERM to KILL for a process group established atomically at spawn. Ordinary
-  background children are terminated even after the main command exits. Git setup/cleanup have their
-  own bounds. Full descendant containment and crash recovery remain operations work.
-- Guards conservatively reject common protected/generated paths, manifests/lockfiles,
-  CI/config/instruction edits, binary changes, new symlinks/submodules, oversized diffs,
-  obvious credential markers and removal of common assertion/test invocation lines.
-  Custom exclusions and sophisticated secret/scope analysis are deferred. Checks and
-  harness output can contain sensitive information; trusted code and OS sandboxing
-  are required. A worktree is not a security boundary and Git mutation detection
-  cannot reverse malicious external effects. See README for exact limits/recovery.
-- There is no automatic push, scheduler, daemon, dashboard, or merge. The README
-  documents stage 1 installation, verification/config, safety, status and troubleshooting;
-  scheduling setup will be documented when scheduling is implemented.
+Establish a minimal, functional end-to-end workflow.
 
-## 17. Stage 2 implementation
+#### Scope
 
-Count-bounded sessions invoke fresh adapters and isolated worktrees, preserving the
-Stage 1 commit contract. Codex, Claude Code, Pi, OpenCode and shell-free custom
-argument arrays are selectable; automatic precedence follows that order.
-Repository bsa.json adds harness, customCommand, instructions, maxIterations,
-failureLimit and saturationLimit; CLI overrides repository values. Defaults stop
-after two empty attempts or three failures. Timeout and cancellation stop sessions.
-The ten most recent durable records on the target branch and their changed paths supply exploration and failure-avoidance context.
-Records link each attempt to its session and harness. One common Git lock covers the entire session, including the gaps between attempts. Candidate ranking and repeat avoidance remain prompt-based; structured semantic
-candidate scoring, global config, YAML and independent model review are deferred.
-Stage 1 decisions above describe the original baseline, superseded here where noted.
+- Create a Swift CLI targeting macOS and Linux.
+- Discover and validate the Git repository.
+- Isolate changes using Git worktrees and a dedicated BSA branch.
+- Implement one iteration: inspect → discover → select → implement → verify → commit.
+- Integrate Codex as the initial coding harness.
+- Ensure each successful iteration produces exactly one coherent, atomic commit; failures and no-ops produce none.
+- Support `bsa run`, `bsa status`, and CLI help, consistent with the spec.
+- Make `bsa run` usable without configuration in a supported repository.
+- Implement verification gates, error handling, and safe cleanup.
+- Protect the user's working tree and uncommitted changes.
+- Add automated tests for Git isolation, lifecycle outcomes, and failure paths.
 
-## 18. Stage 3 operational implementation
+#### Constraints
 
-Execution windows support `--duration Ns|Nm|Nh` (up to seven days) and next-local
-`--until HH:MM`; active command budgets are reduced to the remaining window.
-`stop` uses a common-Git-directory cooperative marker and existing process-group
-termination. Repository-wide kernel locks prevent overlaps across branches,
-linked checkouts and state roots. Latest interrupted records are reconciled under
-that lock against the published target SHA; unpublished work is retained for
-manual inspection, never resumed blindly or automatically published.
+- Minimal dependencies; prefer Swift concurrency where appropriate.
+- Keep adapters and scheduling extensible without prematurely implementing them.
+- Never commit changes that fail required verification.
+- Never push automatically.
+- No dashboard or advanced scheduling in this stage.
+- Follow the specification where it is more precise than this prompt.
 
-`history`, `config show`, `doctor` and `harnesses` provide operational inspection.
-Global JSON defaults precede repository configuration and CLI overrides.
-Explicit `push: true` performs non-forced origin pushes after publication.
-Scheduling creates durable daily definitions, shell wrappers and launchd plists
-or systemd service/timer files. Native installation and unloading are explicit
-operator commands documented in README; manual wrapper invocation is the fallback.
-Native schedules follow host-local DST behavior and do not request catch-up.
+#### Deliverables
 
-Limitations: normalized harness costs are unavailable, so no dollar budget is
-advertised. Abandoned worktree removal and verbose native log rotation are manual;
-per-record command output remains bounded. Prompt-based candidate ranking and
-self-review remain supplementary, without a separate semantic model reviewer.
+1. Working single-iteration Swift CLI.
+2. Tests for success, failure, and Git isolation.
+3. README installation and usage instructions.
+4. Updated `Specs.md` reflecting actual decisions and justified deviations.
+5. One or more logical development commits.
 
-### Final review amendments
+**Acceptance:** `bsa run` can identify, implement, verify, and commit one worthwhile improvement without modifying the user's working tree.
 
-Repository configuration supports additional protected path globs in
-`protectedPaths`. The structural guard checks both sides of renames before
-publication. Generated schedule wrappers respect configured iteration limits.
-On cancellation or timeout, Git removes clean worktrees and retains dirty ones
-with the path in the iteration diagnostics. The CI matrix packages the tested
-release executable and README for each host architecture.
+### Prompt 2 — Autonomy & Intelligence
+
+Implement **Stage 2 — Autonomy & Intelligence** of Boy Scout Agent (BSA), using `Specs.md` as the source of truth and building on completed Stage 1.
+
+#### Scope
+
+- Implement `bsa run --count N` for repeated independent iterations.
+- Start each iteration with fresh harness context, while preserving useful run history.
+- Add built-in adapters for Claude Code, Pi, and OpenCode alongside Codex.
+- Support configurable custom harness commands.
+- Implement harness selection by CLI flag and configuration.
+- Add default improvement priorities and Boy Scout rules.
+- Support optional repository configuration through `bsa.json`, preserving existing configurations without adding a parser dependency.
+- Prioritize high-value changes while using controlled exploration to cover neglected areas.
+- Select one coherent, appropriately scoped improvement per iteration.
+- Persist success, failure, rejection, and no-op outcomes.
+- Supply recent failed tasks and diagnostics to the planner so it can avoid unchanged failures. Enforce a consecutive failure limit independently of planner behavior.
+- Detect saturation and stop rather than inventing changes.
+- Stop correctly at iteration limits and unrecoverable errors.
+- Test configuration, adapters, iteration boundaries, and stopping conditions.
+
+#### Constraints
+
+- Exactly one verified commit per successful iteration; zero for unsuccessful iterations.
+- Do not reuse a single long-running agent conversation for the entire loop.
+- Keep Git isolation and verification for every iteration.
+- Keep the orchestrator language-agnostic and harness details encapsulated.
+- Preserve zero-config usage.
+- Follow the specification where it is more precise than this prompt.
+
+#### Deliverables
+
+1. Multi-iteration autonomous improvement loop.
+2. Built-in and custom harness support.
+3. Configurable rules and defaults.
+4. Persistent run history and saturation handling.
+5. Tests, README, and example configuration.
+6. Updated `Specs.md` reflecting implementation.
+7. Logical development commits.
+
+**Acceptance:** `bsa run --count 100` can perform up to 100 fresh iterations, each producing at most one verified commit, and stop appropriately based on history, limits, and saturation.
+
+Candidate discovery, selection, and self-review share the fresh agent invocation. The fixed priority order and repository instructions guide selection. Git guards and project verification determine whether a commit can be published.
+
+### Prompt 3 — Scheduling, Operations & Polish
+
+Implement **Stage 3 — Scheduling, Operations & Polish** of Boy Scout Agent (BSA), completing `Specs.md` on top of Stages 1 and 2.
+
+#### Scope
+
+- Add time-bounded runs, including `bsa run --until HH:MM`.
+- Add local recurring schedules and configurable execution windows.
+- Support graceful cancellation and shutdown, including safe handling of an in-progress iteration.
+- Provide status, run history, and useful operational logs.
+- Prevent overlapping runs on the same repository or target branch.
+- Recover safely from interruptions, stale locks, and abandoned worktrees.
+- Respect iteration limits, execution timeouts, and optional cost budgets where harnesses expose usable cost data.
+- Improve CLI diagnostics and ergonomics.
+- Validate behavior on macOS and Linux.
+- Document installation, harness configuration, schedules, troubleshooting, and limitations.
+- Add integration tests for scheduling, interruption, recovery, and concurrency.
+
+#### Constraints
+
+- Local-first and lightweight; no required server, Docker, or database service.
+- Prefer native OS scheduling where appropriate.
+- Never silently discard user changes or partial work.
+- No automatic push unless explicitly configured.
+- Preserve the one-improvement/one-commit, Git isolation, and verification guarantees.
+- No web dashboard.
+- Follow the specification where it is more precise than this prompt.
+
+#### Deliverables
+
+1. Scheduling and time-bounded execution.
+2. Reliable operational controls, history, logging, and recovery.
+3. Automated tests for unattended and failure scenarios.
+4. Polished CLI help and README.
+5. Updated `Specs.md` documenting actual implementation.
+6. Logical development commits.
+
+**Acceptance:** BSA can run unattended overnight, make independently verified atomic improvements, respect configured limits, recover safely from interruptions, and report its work clearly.
