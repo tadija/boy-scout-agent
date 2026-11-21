@@ -12,9 +12,9 @@ public struct LocalSchedule: Codable {
 
 public struct Scheduler {
     public let directory: URL
-    public init() throws {
+    public init(dataDirectory: URL? = nil) throws {
         let base = ProcessInfo.processInfo.environment["XDG_DATA_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share").path
-        directory = URL(fileURLWithPath: base).appendingPathComponent("bsa/schedules")
+        directory = (dataDirectory ?? URL(fileURLWithPath: base).appendingPathComponent("bsa")).appendingPathComponent("schedules")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     }
     public func list() throws -> [LocalSchedule] {

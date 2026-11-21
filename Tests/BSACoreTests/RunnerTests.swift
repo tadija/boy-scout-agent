@@ -50,6 +50,18 @@ final class RunnerTests: XCTestCase {
         XCTAssertEqual(try git(["worktree", "list", "--porcelain"]).components(separatedBy: "worktree ").count, 2)
     }
 
+    func testScheduleLifecyclePreservesRepository() throws {
+        let scheduler = try Scheduler(dataDirectory: data)
+        let schedule = try scheduler.add(repository: checkout, executable: "/usr/local/bin/bsa", at: "00:00", duration: "4h")
+        XCTAssertEqual(try scheduler.list().map(\.id), [schedule.id])
+        let script = try String(contentsOf: scheduler.directory.appendingPathComponent(schedule.id + ".sh"), encoding: .utf8)
+        XCTAssertTrue(script.contains("--duration '4h'"))
+        XCTAssertTrue(script.contains(checkout.path))
+        XCTAssertThrowsError(try scheduler.remove("../unknown"))
+        try scheduler.remove(schedule.id)
+        XCTAssertTrue(try scheduler.list().isEmpty)
+        XCTAssertEqual(try git(["status", "--porcelain"]), "")
+    }
     func testExpiredDeadlineDoesNotInvokeHarness() throws {
         let config = try Configuration.load(repository: Repository(at: checkout))
         let records = try Runner().runSession(at: checkout, configuration: config,

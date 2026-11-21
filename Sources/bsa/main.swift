@@ -38,8 +38,12 @@ do {
                 guard ["--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
                     throw BSAError.message("Unknown or incomplete option: \(args[index]). See bsa --help.")
                 }
-                if args[index] == "--duration" { deadline = Date().addingTimeInterval(try ExecutionWindow.duration(args[index + 1])) }
-                else if args[index] == "--until" { deadline = try ExecutionWindow.until(args[index + 1]) }
+                if args[index] == "--duration" {
+                    guard deadline == nil else { throw BSAError.message("Specify only one execution window") }
+                    deadline = Date().addingTimeInterval(try ExecutionWindow.duration(args[index + 1])) }
+                else if args[index] == "--until" {
+                    guard deadline == nil else { throw BSAError.message("Specify only one execution window") }
+                    deadline = try ExecutionWindow.until(args[index + 1]) }
                 else if args[index] == "--branch" { configuration.branch = args[index + 1] }
                 else if args[index] == "--base" { configuration.base = args[index + 1] }
                 else if args[index] == "--harness" { configuration.harness = args[index + 1] }
@@ -76,7 +80,7 @@ do {
                 try scheduler.remove(args[2])
                 print("Removed schedule files. Unload any installed native timer first; see README.")
             } else if args.count == 6 && args[1] == "add" && args[2] == "--at" && args[4] == "--duration" {
-                let executable = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path
+                guard let executable = Bundle.main.executableURL?.path else { throw BSAError.message("Cannot resolve BSA executable path") }
                 let schedule = try scheduler.add(repository: directory, executable: executable, at: args[3], duration: args[5])
                 print("Created \(schedule.id) in \(scheduler.directory.path). Install its native scheduler file or invoke its .sh manually; see README.")
             } else { throw BSAError.message("Use schedule add --at HH:MM --duration 4h, schedule list, or schedule remove ID") }
