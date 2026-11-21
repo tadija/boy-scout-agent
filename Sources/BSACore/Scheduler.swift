@@ -32,7 +32,11 @@ public struct Scheduler {
         let stem = directory.appendingPathComponent(schedule.id)
         try JSONEncoder().encode(schedule).write(to: stem.appendingPathExtension("json"), options: .atomic)
         func quote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-        let script = "#!/bin/sh\ncd " + quote(repo.root.path) + " || exit 1\nexec " + quote(executable) + " run --duration " + quote(duration) + "\n"
+        let environment = ProcessInfo.processInfo.environment
+        let exports = ["PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME"].compactMap { key in
+            environment[key].map { "export " + key + "=" + quote($0) + "\n" }
+        }.joined()
+        let script = "#!/bin/sh\n" + exports + "cd " + quote(repo.root.path) + " || exit 1\nexec " + quote(executable) + " run --duration " + quote(duration) + "\n"
         let scriptURL = stem.appendingPathExtension("sh")
         try Data(script.utf8).write(to: scriptURL, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
