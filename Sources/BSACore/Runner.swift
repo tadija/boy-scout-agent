@@ -8,6 +8,26 @@ public final class Runner {
         try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory).latest
     }
 
+    public func runSession(at directory: URL, configuration: Configuration, harness: any HarnessAdapter,
+                           dataDirectory: URL? = nil) throws -> [Record] {
+        try configuration.validate()
+        let repo = try Repository(at: directory)
+        let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa-session.lock"))
+        defer { sessionLock.release() }
+        var records: [Record] = []
+        var failures = 0
+        var empty = 0
+        for _ in 0..<configuration.maxIterations {
+            if Cancellation.requested != 0 { break }
+            let record = try run(at: directory, configuration: configuration, harness: harness, dataDirectory: dataDirectory)
+            records.append(record)
+            failures = ["committed", "no_candidate"].contains(record.outcome) ? 0 : failures + 1
+            empty = record.outcome == "no_candidate" ? empty + 1 : 0
+            if failures >= configuration.failureLimit || empty >= configuration.saturationLimit || ["cancelled", "timed_out"].contains(record.outcome) { break }
+        }
+        return records
+    }
+
     public func run(at directory: URL, configuration: Configuration? = nil,
                     harness: HarnessAdapter = CodexAdapter(), dataDirectory: URL? = nil) throws -> Record {
         let repo = try Repository(at: directory)
@@ -18,6 +38,7 @@ public final class Runner {
         let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
         defer { lock.release() }
         let history = try store.latest
+        let recent = try store.recent()
         if let previous = history, previous.outcome == "running" {
             throw BSAError.message("Interrupted session \(previous.id). Inspect \(store.directory.path) and its worktree before starting again; automatic recovery is deferred to stage 3.")
         }
@@ -113,9 +134,9 @@ public final class Runner {
             try checkBudget()
             let response: CommandResult
             do {
-                response = try harness.run(prompt: Planner.prompt(history: history.map {
+                response = try harness.run(prompt: Planner.prompt(history: config.instructions + "\nExplore neglected areas; avoid repeating unchanged failed tasks. Recent paths: " + recent.flatMap(\.paths).suffix(30).joined(separator: ", ") + "\n" + recent.map {
                     "Outcome: \($0.outcome). Task: \($0.task ?? "none"). Detail: \($0.detail ?? "none")"
-                } ?? "No previous outcome"), cwd: worktree, timeout: remaining())
+                }.joined(separator: "\n")), cwd: worktree, timeout: remaining())
             } catch {
                 record.outcome = Cancellation.requested != 0 ? "cancelled" : "harness_failed"
                 throw error

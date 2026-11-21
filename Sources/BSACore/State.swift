@@ -86,6 +86,12 @@ struct StateStore {
             return try JSONDecoder().decode(Record.self, from: Data(contentsOf: url))
         }
     }
+    func recent() throws -> [Record] {
+        try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" && !["latest.json", "branches.json"].contains($0.lastPathComponent) }
+            .map { try JSONDecoder().decode(Record.self, from: Data(contentsOf: $0)) }
+            .sorted { $0.started > $1.started }.prefix(10).map { $0 }
+    }
     func ownedBranches() throws -> [String: String] {
         let url = directory.appendingPathComponent("branches.json")
         guard FileManager.default.fileExists(atPath: url.path) else { return [:] }

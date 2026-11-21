@@ -46,3 +46,37 @@ struct Planner {
         """
     }
 }
+
+/// Each invocation is a new process; custom arguments never pass through a shell.
+public struct CommandAdapter: HarnessAdapter {
+    public let name: String
+    let arguments: [String]
+    public init(name: String, arguments: [String]) { self.name = name; self.arguments = arguments }
+    public func detect(in directory: URL) throws {
+        let result = try CommandRunner().run("/usr/bin/env", [arguments[0], "--help"], cwd: directory, timeout: 10)
+        guard result.status == 0 else { throw BSAError.message("Cannot run \(name); check installation and authentication") }
+    }
+    public func run(prompt: String, cwd: URL, timeout: TimeInterval) throws -> CommandResult {
+        let expanded = arguments.map { $0.replacingOccurrences(of: "{prompt}", with: prompt).replacingOccurrences(of: "{cwd}", with: cwd.path) }
+        return try CommandRunner().run("/usr/bin/env", expanded, cwd: cwd, timeout: timeout)
+    }
+}
+
+public enum Harnesses {
+    public static func select(configuration: Configuration, directory: URL) throws -> any HarnessAdapter {
+        let adapters: [any HarnessAdapter] = [CodexAdapter(),
+            CommandAdapter(name: "claude", arguments: ["claude", "--print", "--permission-mode", "acceptEdits", "{prompt}"]),
+            CommandAdapter(name: "pi", arguments: ["pi", "--print", "--no-session", "{prompt}"]),
+            CommandAdapter(name: "opencode", arguments: ["opencode", "run", "{prompt}"])]
+        if configuration.harness == "custom" {
+            guard let command = configuration.customCommand, command.contains(where: { $0.contains("{prompt}") }) else { throw BSAError.message("customCommand requires an executable and {prompt} argument") }
+            return CommandAdapter(name: "custom", arguments: command)
+        }
+        if let name = configuration.harness {
+            guard let adapter = adapters.first(where: { $0.name == name }) else { throw BSAError.message("Unknown harness: \(name)") }
+            return adapter
+        }
+        for adapter in adapters { if (try? adapter.detect(in: directory)) != nil { return adapter } }
+        throw BSAError.message("Install Codex, Claude Code, Pi or OpenCode, or configure a custom harness")
+    }
+}

@@ -45,3 +45,23 @@ Create a `bsa.json` at the root of your project and list the commands that shoul
 ```
 
 Commands run in order in each fresh checkout. Include any setup they need, and use commands you trust to execute on your machine.
+
+### Stage 2 autonomy
+
+`bsa run --count 100` runs up to 100 fresh iterations. Stops after two consecutive
+empty attempts, three consecutive failures, cancellation or timeout. Each attempt
+retains the Stage 1 isolated verification and atomic publication contract.
+
+Select `--harness codex|claude|pi|opencode|custom`; automatic discovery uses that
+order (excluding custom). Authenticate the chosen CLI first. Claude uses print mode
+with acceptEdits; commands still require permissions configured in that CLI.
+Pi and OpenCode run in print/run mode without resuming conversations.
+These harnesses can execute repository code: use a trusted environment.
+
+Configuration remains dependency-free `bsa.json`. Additional optional keys:
+`harness`, `customCommand` (argument array with `{prompt}` and optional `{cwd}`),
+`instructions`, `maxIterations`, `failureLimit`, `saturationLimit`.
+CLI flags override repository settings. Instructions extend mandatory safety rules.
+Recent ten outcomes and touched paths guide bounded candidate selection and exploration.
+Failure avoidance is prompt guidance, not a deterministic semantic deduplication system.
+Global configuration and YAML parsing remain deferred.

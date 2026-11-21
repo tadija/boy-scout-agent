@@ -288,3 +288,16 @@ The canonical specification filename is `Docs/Specs/bsa-v1-specs.md` (the stage 
 - There is no automatic push, scheduler, daemon, dashboard, or merge. The README
   documents stage 1 installation, verification/config, safety, status and troubleshooting;
   scheduling setup will be documented when scheduling is implemented.
+
+## 17. Stage 2 implementation
+
+Count-bounded sessions invoke fresh adapters and isolated worktrees, preserving the
+Stage 1 commit contract. Codex, Claude Code, Pi, OpenCode and shell-free custom
+argument arrays are selectable; automatic precedence follows that order.
+Repository bsa.json adds harness, customCommand, instructions, maxIterations,
+failureLimit and saturationLimit; CLI overrides repository values. Defaults stop
+after two empty attempts or three failures. Timeout and cancellation stop sessions.
+Recent ten durable records and paths supply exploration and failure-avoidance context.
+Candidate ranking and repeat avoidance remain prompt-based; structured semantic
+candidate scoring, global config, YAML and independent model review are deferred.
+Stage 1 decisions above describe the original baseline, superseded here where noted.
