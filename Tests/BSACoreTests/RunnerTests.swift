@@ -196,7 +196,11 @@ final class RunnerTests: XCTestCase {
             return self.success()
         }
         XCTAssertEqual(record.outcome, "cancelled")
-        try assertNoCommit()
+        XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "1")
+        Cancellation.requested = 0
+        let store = try StateStore(repository: Repository(at: checkout), dataDirectory: data)
+        let partial = store.directory.appendingPathComponent("worktree-" + record.id).appendingPathComponent("value.txt")
+        XCTAssertEqual(try String(contentsOf: partial, encoding: .utf8), "after\n")
     }
     func testMissingVerificationRefusesBeforeHarness() throws {
         try FileManager.default.removeItem(at: checkout.appendingPathComponent("bsa.json"))

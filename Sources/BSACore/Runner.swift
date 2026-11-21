@@ -46,9 +46,8 @@ public final class Runner {
         var empty = 0
         for _ in 0..<configuration.maxIterations {
             if Cancellation.shouldStop || deadline.map({ Date() >= $0 }) == true { break }
-            var bounded = configuration
-            if let deadline { bounded.timeoutSeconds = min(bounded.timeoutSeconds, max(0.001, deadline.timeIntervalSinceNow)) }
-            let record = try iteration(repo: repo, config: bounded, harness: harness, store: store, sessionID: sessionID)
+            let budget = min(configuration.timeoutSeconds, deadline?.timeIntervalSinceNow ?? .infinity)
+            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, deadline: ProcessInfo.processInfo.systemUptime + budget)
             records.append(record)
             onIteration(record)
             failures = ["committed", "no_candidate"].contains(record.outcome) ? 0 : failures + 1
@@ -72,11 +71,11 @@ public final class Runner {
         Cancellation.stopFile = stop
         defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
         try harness.detect(in: repo.root)
-        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased())
+        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds)
     }
 
     private func iteration(repo: Repository, config: Configuration, harness: any HarnessAdapter,
-                           store: StateStore, sessionID: String) throws -> Record {
+                           store: StateStore, sessionID: String, deadline: TimeInterval) throws -> Record {
         let history = try store.latest
         if let previous = history, previous.outcome == "running" {
             var recovered = previous
@@ -115,7 +114,6 @@ public final class Runner {
         record.harness = harness.name
         try store.save(record)
         var worktrees: [URL] = []
-        let deadline = ProcessInfo.processInfo.systemUptime + config.timeoutSeconds
         func remaining() -> TimeInterval { max(0.001, deadline - ProcessInfo.processInfo.systemUptime) }
         func checkBudget() throws {
             if Cancellation.shouldStop { throw BSAError.message("cancelled") }
@@ -243,7 +241,12 @@ public final class Runner {
         }
         for directory in worktrees.reversed() {
             do {
-                try repo.git(["worktree", "remove", "--force", directory.path])
+                if ["cancelled", "timed_out"].contains(record.outcome) {
+                    // Plain remove also protects ignored and untracked partial output.
+                    try repo.git(["worktree", "remove", directory.path])
+                } else {
+                    try repo.git(["worktree", "remove", "--force", directory.path])
+                }
             } catch {
                 record.terminal = true
                 record.detail = (record.detail.map { $0 + "\n" } ?? "") + "Cleanup failed; inspect \(directory.path): \(error)"
