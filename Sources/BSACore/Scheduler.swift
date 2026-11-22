@@ -13,7 +13,9 @@ public struct LocalSchedule: Codable {
 public struct Scheduler {
     public let directory: URL
     public init(dataDirectory: URL? = nil) throws {
-        let base = ProcessInfo.processInfo.environment["XDG_DATA_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share").path
+        // Match StateStore: XDG requires ignoring relative base directories.
+        let xdgData = ProcessInfo.processInfo.environment["XDG_DATA_HOME"].flatMap { $0.hasPrefix("/") ? $0 : nil }
+        let base = xdgData ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share").path
         directory = (dataDirectory ?? URL(fileURLWithPath: base).appendingPathComponent("bsa")).appendingPathComponent("schedules")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     }
