@@ -1,55 +1,7 @@
 import XCTest
 @testable import BSACore
 
-private struct FakeHarness: HarnessAdapter {
-    let name = "fake"
-    var action: (URL) throws -> CommandResult
-    func detect(in directory: URL) throws {}
-    func run(prompt: String, cwd: URL, timeout: TimeInterval) throws -> CommandResult { try action(cwd) }
-}
-
-final class RunnerTests: XCTestCase {
-    var temporary: URL!
-    var checkout: URL!
-    var data: URL!
-    let commands = CommandRunner()
-
-    override func setUpWithError() throws {
-        Cancellation.requested = 0
-        temporary = FileManager.default.temporaryDirectory.appendingPathComponent("bsa-tests-" + UUID().uuidString)
-        checkout = temporary.appendingPathComponent("project")
-        data = temporary.appendingPathComponent("state")
-        try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
-        try git(["init", "-b", "main"])
-        try git(["config", "user.name", "BSA Test"])
-        try git(["config", "user.email", "test@example.invalid"])
-        try write("value.txt", "before\n")
-        try write("bsa.json", "{\"verification\":[\"test -s value.txt\"]}")
-        try git(["add", "."])
-        try git(["commit", "-m", "Initial"])
-    }
-    override func tearDownWithError() throws {
-        Cancellation.requested = 0
-        try? FileManager.default.removeItem(at: temporary)
-    }
-    func write(_ path: String, _ content: String, at root: URL? = nil) throws {
-        try Data(content.utf8).write(to: (root ?? checkout).appendingPathComponent(path))
-    }
-    @discardableResult func git(_ arguments: [String], at root: URL? = nil) throws -> String {
-        let result = try commands.run("/usr/bin/env", ["git"] + arguments, cwd: root ?? checkout, cancellable: false)
-        guard result.status == 0 else { throw BSAError.message(result.output) }
-        return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    func run(_ action: @escaping (URL) throws -> CommandResult) throws -> Record {
-        try Runner().run(at: checkout, harness: FakeHarness(action: action), dataDirectory: data)
-    }
-    func success() -> CommandResult { CommandResult(status: 0, output: "Correct the value fixture", timedOut: false) }
-    func assertNoCommit() throws {
-        XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "1")
-        XCTAssertFalse(try git(["branch", "--list"]).contains("bsa/"))
-        XCTAssertEqual(try git(["worktree", "list", "--porcelain"]).components(separatedBy: "worktree ").count, 2)
-    }
-
+final class RunnerTests: RepositoryTestCase {
     func testScheduleLifecyclePreservesRepository() throws {
         let scheduler = try Scheduler(dataDirectory: data)
         let schedule = try scheduler.add(repository: checkout, executable: "/usr/local/bin/bsa", at: "00:00", duration: "4h")
@@ -359,36 +311,6 @@ final class RunnerTests: XCTestCase {
         XCTAssertEqual(record.outcome, "rejected")
         try assertNoCommit()
     }
-    func testCodexAdapterWithFakeExecutableEndToEnd() throws {
-        let bin = temporary.appendingPathComponent("bin")
-        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        let executable = bin.appendingPathComponent("codex")
-        let script = """
-        #!/bin/sh
-        [ "$1" = --ask-for-approval ] && [ "$2" = never ] || exit 6
-        shift 2
-        if [ "$1" = exec ] && [ "$2" = --help ]; then
-          echo '--sandbox --cd --output-last-message'
-          exit 0
-        fi
-        [ "$1" = exec ] || exit 2
-        [ "$2" = --sandbox ] && [ "$3" = workspace-write ] || exit 3
-        [ "$4" = --cd ] && [ "$5" -ef . ] || exit 4
-        [ "$6" = --output-last-message ] || exit 5
-        printf 'after\n' > value.txt
-        printf 'Correct the fixture value\nVerified the change.' > "$7"
-        echo 'noisy harness banner'
-        """
-        try Data(script.utf8).write(to: executable)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
-        let previous = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
-        setenv("PATH", bin.path + ":" + previous, 1)
-        defer { setenv("PATH", previous, 1) }
-        let record = try Runner().run(at: checkout, harness: CodexAdapter(), dataDirectory: data)
-        XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
-        XCTAssertEqual(try git(["log", "-1", "--format=%s", record.branch]), "bsa: Correct the fixture value")
-        XCTAssertFalse(record.task?.contains("noisy harness") ?? true)
-    }
 
     func testBackgroundChildrenCannotOutliveCommand() throws {
         let marker = checkout.appendingPathComponent("leaked")
@@ -408,36 +330,6 @@ final class RunnerTests: XCTestCase {
         XCTAssertEqual(record.outcome, "rejected")
     }
 
-    func testZeroConfigSwiftPackageDetectsAndRunsTests() throws {
-        try FileManager.default.removeItem(at: checkout.appendingPathComponent("bsa.json"))
-        try write("Package.swift", """
-        // swift-tools-version: 6.0
-        import PackageDescription
-        let package = Package(name: "Fixture", targets: [
-            .target(name: "Fixture"), .testTarget(name: "FixtureTests", dependencies: ["Fixture"])
-        ])
-        """)
-        try FileManager.default.createDirectory(at: checkout.appendingPathComponent("Sources/Fixture"), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: checkout.appendingPathComponent("Tests/FixtureTests"), withIntermediateDirectories: true)
-        try write("Sources/Fixture/Value.swift", "public func value() -> Int { 1 }\n")
-        try write("Tests/FixtureTests/ValueTests.swift", """
-        import XCTest
-        @testable import Fixture
-        final class ValueTests: XCTestCase {
-            func testValue() { XCTAssertEqual(Fixture.value(), 2) }
-        }
-        """)
-        try git(["add", "--all"])
-        try git(["commit", "-m", "Swift package with failing test"])
-        let record = try run { cwd in
-            try self.write("Sources/Fixture/Value.swift", "public func value() -> Int { 2 }\n", at: cwd)
-            return self.success()
-        }
-        XCTAssertEqual(record.outcome, "committed", (record.detail ?? "") + "\n" + (record.checks.first?.output ?? ""))
-        XCTAssertNotEqual(record.baselineChecks.first?.status, 0)
-        XCTAssertEqual(record.checks.first?.status, 0)
-        XCTAssertEqual(record.paths, ["Sources/Fixture/Value.swift"])
-    }
 
     func testHarnessLaunchErrorIsRecordedAsHarnessFailure() throws {
         let record = try run { _ in throw BSAError.message("fake harness disappeared") }

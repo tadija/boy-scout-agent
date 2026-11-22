@@ -18,7 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: swift --version
-      - run: swift test
+      - name: Core tests
+        run: swift test
+      - name: External integration tests
+        run: BSA_INTEGRATION_TESTS=1 swift test --filter ExternalIntegrationTests
       - run: swift build -c release
       - run: sh Tests/Integration/cli-smoke.sh "$(swift build -c release --show-bin-path)/bsa"
       - name: Package tested CLI
