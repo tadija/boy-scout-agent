@@ -6,7 +6,7 @@ Use `bsa status` for the latest outcome, branch, commit candidate and diagnostic
 
 Worktrees isolate proposed edits. Harnesses and verification commands still run with your account's permissions. Use trusted projects and commands, or run BSA in an OS sandbox.
 
-Each iteration starts a fresh agent with recent tasks, failures and changed paths from the target branch. BSA stops after two consecutive empty attempts, three consecutive failures, cancellation, timeout, or an error that needs attention. Running again continues from the BSA branch. If your development branch has diverged, start a new target with `bsa run --branch bsa/next-improvement`.
+Each iteration starts a fresh agent with recent tasks, failures and changed paths from the target branch. BSA stops after two consecutive empty attempts, three consecutive failures, cancellation, timeout, or an error that needs attention. Running again continues from the BSA branch. If your development branch has diverged, start a new target with `bsa run --branch bsa/next-improvement`, or explicitly continue from the existing target tip with `--force` (see recovery below).
 
 ## Overnight operation
 
@@ -80,8 +80,22 @@ remain in the repository's data directory for inspection and copying partial wor
 Use `git worktree list`, inspect the relevant `worktree-ID` / `verify-ID`, then
 remove them manually with `git worktree remove` when their contents are no longer
 needed. Never delete the data directory to bypass branch ownership checks.
-Externally changed or diverged target branches require manual resolution or a new
-`--branch`; BSA does not reset them. Normal rejected attempts discard their isolated
+
+To explicitly adopt an existing or externally changed target branch, use:
+
+```sh
+bsa run --harness claude --branch bsa/boy-scout-agent --force
+```
+
+`--force` continues from the target's current tip, including when it has diverged
+from the configured base. It preserves existing commits and does not reset the
+branch to the base. Adoption updates BSA's local ownership record, even if the
+agent finds no candidate. A diverged target still needs `--force` on subsequent
+runs, or a compatible `--base`. The target must be unchecked out in every worktree;
+concurrent ref changes are still rejected. This flag applies only to this run and
+cannot be enabled through `bsa.json`.
+
+Normal rejected attempts discard their isolated
 changes after saving bounded diagnostics, as required by the verification contract.
 
 History JSON records retain bounded harness summaries and check outputs, IDs,

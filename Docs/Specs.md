@@ -115,7 +115,7 @@ Each adapter must enforce noninteractive behavior, prevent agent-created commits
 - Use a dedicated worktree under BSA's data directory, outside the developer's checkout.
 - Local commits only by default; pushing is opt-in and never forced.
 - Never reset or overwrite existing unrelated branches or uncommitted user changes.
-- Detect BSA branch divergence and pause for user resolution rather than rewriting history.
+- Detect BSA branch divergence and pause for user resolution by default. An explicit per-run `--force` may adopt an existing or externally changed target and continue from its tip despite divergence; it preserves history, requires an unchecked-out target, and retains concurrent-ref guards.
 - One commit per successful iteration; no partial commits.
 - Commit message format: `bsa: <concise improvement summary>`.
 - Preserve an audit trail connecting session ID, iteration ID, baseline SHA, and commit SHA.

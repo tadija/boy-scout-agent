@@ -262,6 +262,66 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertThrowsError(try run { _ in XCTFail("Must not invoke harness"); return self.success() })
         XCTAssertEqual(try git(["rev-parse", "bsa/project"]), try git(["rev-parse", "HEAD"]))
     }
+    func testForceAdoptsDivergedBranchAndPreservesItsHistory() throws {
+        try git(["checkout", "-b", "existing"])
+        try write("value.txt", "existing work\n")
+        try git(["commit", "-am", "Existing branch work"])
+        let tip = try git(["rev-parse", "HEAD"])
+        try git(["checkout", "main"])
+        try write("main.txt", "development work\n")
+        try git(["add", "."])
+        try git(["commit", "-m", "Diverge from target"])
+        let head = try git(["rev-parse", "HEAD"])
+        var config = try Configuration.load(repository: Repository(at: checkout))
+        config.branch = "existing"
+        let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+            XCTAssertEqual(try String(contentsOf: cwd.appendingPathComponent("value.txt")), "existing work\n")
+            try self.write("value.txt", "improved\n", at: cwd)
+            return self.success()
+        }, dataDirectory: data, force: true)
+        XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
+        XCTAssertEqual(record.baseline, tip)
+        XCTAssertEqual(try git(["rev-parse", "existing^"]), tip)
+        XCTAssertEqual(try git(["rev-parse", "HEAD"]), head)
+        XCTAssertEqual(try git(["status", "--porcelain"]), "")
+    }
+
+    func testForceAdoptsExternallyChangedBranchWithoutChanges() throws {
+        let first = try run { cwd in try self.write("value.txt", "first\n", at: cwd); return self.success() }
+        try git(["update-ref", "refs/heads/" + first.branch, "HEAD"])
+        XCTAssertThrowsError(try run { _ in XCTFail("Must require explicit adoption"); return self.success() })
+        let record = try Runner().run(at: checkout, harness: FakeHarness { _ in self.success() }, dataDirectory: data, force: true)
+        XCTAssertEqual(record.outcome, "no_candidate")
+        XCTAssertEqual(try run { _ in self.success() }.outcome, "no_candidate")
+    }
+
+    func testForceRejectsCheckedOutTargetIncludingLinkedWorktrees() throws {
+        var config = try Configuration.load(repository: Repository(at: checkout))
+        config.branch = "main"
+        let harness = FakeHarness { _ in XCTFail("Checked-out target invoked harness"); return self.success() }
+        XCTAssertThrowsError(try Runner().run(at: checkout, configuration: config, harness: harness, dataDirectory: data, force: true))
+        let linked = temporary.appendingPathComponent("linked-force")
+        try git(["worktree", "add", "-b", "existing", linked.path])
+        config.branch = "existing"
+        XCTAssertThrowsError(try Runner().run(at: checkout, configuration: config, harness: harness, dataDirectory: data, force: true))
+    }
+
+    func testForceDoesNotOverwriteConcurrentBranchChanges() throws {
+        try git(["branch", "existing"])
+        let original = try git(["rev-parse", "HEAD"])
+        var config = try Configuration.load(repository: Repository(at: checkout))
+        config.branch = "existing"
+        let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+            try self.write("value.txt", "improvement\n", at: cwd)
+            // Simulate another process deleting the target while the harness runs.
+            try self.git(["update-ref", "-d", "refs/heads/existing"])
+            return self.success()
+        }, dataDirectory: data, force: true)
+        XCTAssertNotEqual(record.outcome, "committed")
+        XCTAssertEqual(try git(["branch", "--list", "existing"]), "")
+        XCTAssertEqual(try git(["rev-parse", "HEAD"]), original)
+    }
+
     func testLinkedWorktreeUsesSameRepositoryIdentityAndLock() throws {
         let linked = temporary.appendingPathComponent("linked")
         try git(["worktree", "add", "--detach", linked.path])

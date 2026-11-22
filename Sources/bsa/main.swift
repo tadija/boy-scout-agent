@@ -11,7 +11,7 @@ let version = "0.1.0"
 let help = """
 Boy Scout Agent — one run, one improvement, one commit.
 
-Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV]
+Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV] [--force]
        bsa schedule add --at HH:MM --duration 4h | list | remove ID
        bsa stop | history | doctor | harnesses | config show
        bsa status
@@ -20,6 +20,7 @@ Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--b
 
 Runs fresh isolated iterations with Codex, Claude Code, Pi or OpenCode. Swift packages use swift test automatically;
 other projects need verification commands in bsa.json. Push requires explicit configuration.
+--force adopts an existing target branch and continues from its tip, even if it diverged from the base.
 State: $XDG_DATA_HOME/bsa (default ~/.local/share/bsa).
 """
 
@@ -36,9 +37,15 @@ do {
         switch args[0] {
         case "run":
             var configuration = try Configuration.load(repository: Repository(at: directory))
+            var force = false
             var deadline: Date?
             var index = 1
             while index < args.count {
+                if args[index] == "--force" {
+                    force = true
+                    index += 1
+                    continue
+                }
                 guard ["--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
                     throw BSAError.message("Unknown or incomplete option: \(args[index]). See bsa --help.")
                 }
@@ -59,7 +66,7 @@ do {
             }
             let harness = try Harnesses.select(configuration: configuration, directory: directory)
             print("Harness: \(harness.name). Up to \(configuration.maxIterations) isolated iterations…")
-            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness, deadline: deadline, onProgress: { message in
+            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness, deadline: deadline, force: force, onProgress: { message in
                 FileHandle.standardError.write(Data((message + "\n").utf8))
             }) { record in
                 print("\(record.outcome) on \(record.branch)\(record.commit.map { " (\($0))" } ?? "")")

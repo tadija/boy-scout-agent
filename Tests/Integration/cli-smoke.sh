@@ -33,7 +33,10 @@ git commit -qm Initial
 printf 'uncommitted user work\n' > value.txt
 "$bsa" --help > "$fixture/help"
 "$bsa" status > "$fixture/before"
-"$bsa" run > "$fixture/run" 2> "$fixture/progress"
+git branch bsa/project
+if "$bsa" run > "$fixture/unowned" 2>&1; then exit 1; fi
+grep -q 'use --force' "$fixture/unowned"
+"$bsa" run --force > "$fixture/run" 2> "$fixture/progress"
 "$bsa" status > "$fixture/status"
 grep -q 'Baseline checks' "$fixture/progress"
 grep -q 'Harness' "$fixture/progress"

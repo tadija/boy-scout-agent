@@ -21,10 +21,14 @@ Open a trusted repository with at least one commit and a configured Git author. 
 ```sh
 bsa run
 bsa status
+
 git diff HEAD...bsa/my-project
+git merge bsa/my-project
 ```
 
 Use the branch name printed by BSA in the diff command. BSA starts from your current commit, runs the baseline checks and gives the agent a detached worktree. Your local edits stay in your checkout. BSA inspects the diff and runs verification again against the proposed contents in a fresh worktree. Each accepted improvement adds one commit to the local BSA branch. You decide what to merge or push.
+
+To continue from an existing target branch, explicitly adopt it with `bsa run --branch bsa/my-improvements --force`. BSA adds improvements on top of its current tip, preserving existing commits. The target must be unchecked out. See [branch recovery](Docs/Operations.md) for details.
 
 For a longer run, set an iteration limit and optionally choose the agent.
 

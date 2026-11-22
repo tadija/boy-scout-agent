@@ -34,7 +34,7 @@ public final class Runner {
     }
 
     public func runSession(at directory: URL, configuration: Configuration, harness: any HarnessAdapter,
-                           dataDirectory: URL? = nil, deadline: Date? = nil, onProgress: (String) -> Void = { _ in }, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
+                           dataDirectory: URL? = nil, deadline: Date? = nil, force: Bool = false, onProgress: (String) -> Void = { _ in }, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
         try configuration.validate()
         let repo = try Repository(at: directory)
         let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
@@ -53,7 +53,7 @@ public final class Runner {
             if Cancellation.shouldStop || deadline.map({ Date() >= $0 }) == true { break }
             onProgress("Iteration \(index + 1) of \(configuration.maxIterations)")
             let budget = min(configuration.timeoutSeconds, deadline?.timeIntervalSinceNow ?? .infinity)
-            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, deadline: ProcessInfo.processInfo.systemUptime + budget, onProgress: onProgress)
+            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, deadline: ProcessInfo.processInfo.systemUptime + budget, force: force, onProgress: onProgress)
             records.append(record)
             onIteration(record)
             failures = ["committed", "no_candidate"].contains(record.outcome) ? 0 : failures + 1
@@ -64,7 +64,7 @@ public final class Runner {
     }
 
     public func run(at directory: URL, configuration: Configuration? = nil,
-                    harness: HarnessAdapter = CodexAdapter(), dataDirectory: URL? = nil, onProgress: (String) -> Void = { _ in }) throws -> Record {
+                    harness: HarnessAdapter = CodexAdapter(), dataDirectory: URL? = nil, force: Bool = false, onProgress: (String) -> Void = { _ in }) throws -> Record {
         let repo = try Repository(at: directory)
         let config = try configuration ?? Configuration.load(repository: repo)
         try config.validate()
@@ -77,11 +77,11 @@ public final class Runner {
         Cancellation.stopFile = stop
         defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
         try harness.detect(in: repo.root)
-        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds, onProgress: onProgress)
+        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds, force: force, onProgress: onProgress)
     }
 
     private func iteration(repo: Repository, config: Configuration, harness: any HarnessAdapter,
-                           store: StateStore, sessionID: String, deadline: TimeInterval, onProgress: (String) -> Void) throws -> Record {
+                           store: StateStore, sessionID: String, deadline: TimeInterval, force: Bool, onProgress: (String) -> Void) throws -> Record {
         let history = try store.latest
         if let previous = history, previous.outcome == "running" {
             var recovered = previous
@@ -104,16 +104,20 @@ public final class Runner {
             throw BSAError.message("Run from your development branch, not the BSA target branch")
         }
         let originalTarget = repo.ref(target)
-        if let originalTarget {
+        if let originalTarget, !force {
             guard try store.ownedBranches()[branch] == originalTarget else {
-                throw BSAError.message("Target branch is not owned by BSA or was changed externally. Choose a new --branch; existing branches are never adopted or overwritten.")
+                throw BSAError.message("Target branch is not owned by BSA or was changed externally. Choose a new --branch or use --force to continue from the existing branch tip.")
             }
         }
         let baseline = originalTarget ?? base
-        if let originalTarget, !repo.isAncestor(base, originalTarget) {
-            throw BSAError.message("BSA branch diverged from the configured base. Resolve it manually; BSA never rewrites history.")
+        if let originalTarget, !force, !repo.isAncestor(base, originalTarget) {
+            throw BSAError.message("BSA branch diverged from the configured base. Choose a new --branch or use --force to continue from its tip without rewriting history.")
         }
         try repo.requireUncheckedOut(target)
+        if force, let originalTarget {
+            try store.own(branch: branch, commit: originalTarget)
+            onProgress("Using existing branch \(branch) at \(originalTarget.prefix(12))")
+        }
         let id = UUID().uuidString.lowercased()
         let worktree = store.directory.appendingPathComponent("worktree-" + id)
         var record = Record(id: id, repository: repo.root.path, branch: branch, started: Date(), outcome: "running", baseline: baseline)
