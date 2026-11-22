@@ -64,6 +64,7 @@ public final class CommandRunner {
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         var expired = false
         var status: Int32 = 0
+        var pollInterval: TimeInterval = 0.001
         while true {
             let waited = waitpid(pid, &status, WNOHANG)
             if waited == pid { break }
@@ -86,7 +87,9 @@ public final class CommandRunner {
                 }
                 break
             }
-            Thread.sleep(forTimeInterval: 0.02)
+            // Reap short Git commands promptly; back off for long harness/test runs.
+            Thread.sleep(forTimeInterval: pollInterval)
+            pollInterval = min(pollInterval * 2, 0.02)
         }
         // Clean up ordinary background children even after the main command exited.
         kill(-pid, SIGKILL)

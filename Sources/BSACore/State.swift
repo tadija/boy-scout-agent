@@ -33,6 +33,8 @@ public struct Record: Codable {
     public let branch: String
     public let started: Date
     public var finished: Date?
+    public var phase: String?
+    public var phaseSeconds: [String: Double]?
     public var outcome: String
     public var baseline: String?
     public var commit: String?

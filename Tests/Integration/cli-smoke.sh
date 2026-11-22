@@ -33,8 +33,12 @@ git commit -qm Initial
 printf 'uncommitted user work\n' > value.txt
 "$bsa" --help > "$fixture/help"
 "$bsa" status > "$fixture/before"
-"$bsa" run > "$fixture/run"
+"$bsa" run > "$fixture/run" 2> "$fixture/progress"
 "$bsa" status > "$fixture/status"
+grep -q 'Baseline checks' "$fixture/progress"
+grep -q 'Harness' "$fixture/progress"
+grep -q 'Verification' "$fixture/progress"
+grep -q 'Time: .*Harness: .*Verification:' "$fixture/run"
 grep -q 'committed on bsa/project' "$fixture/run"
 grep -q 'Outcome: committed' "$fixture/status"
 [ "$(git rev-list --all --count)" = 2 ]

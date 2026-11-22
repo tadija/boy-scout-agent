@@ -59,8 +59,17 @@ do {
             }
             let harness = try Harnesses.select(configuration: configuration, directory: directory)
             print("Harness: \(harness.name). Up to \(configuration.maxIterations) isolated iterations…")
-            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness, deadline: deadline) { record in
+            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness, deadline: deadline, onProgress: { message in
+                FileHandle.standardError.write(Data((message + "\n").utf8))
+            }) { record in
                 print("\(record.outcome) on \(record.branch)\(record.commit.map { " (\($0))" } ?? "")")
+                if let finished = record.finished {
+                    let phases = ["Setup", "Baseline checks", "Harness", "Review", "Verification", "Publication", "Cleanup"]
+                    let timings = phases.compactMap { phase in
+                        record.phaseSeconds?[phase].map { "\(phase): \(String(format: "%.1fs", $0))" }
+                    }
+                    print("Time: \(String(format: "%.1fs", finished.timeIntervalSince(record.started))) (\(timings.joined(separator: ", ")))")
+                }
                 if let detail = record.detail { print(detail) }
             }
             guard Cancellation.requested == 0, let record = records.last else { exit(130) }
@@ -121,6 +130,7 @@ do {
             guard args.count == 1 else { throw BSAError.message("status takes no options") }
             if let record = try runner.status(at: directory) {
                 print("Session: \(record.sessionID ?? record.id)\nBranch: \(record.branch)\nOutcome: \(record.outcome)")
+                if let phase = record.phase { print("Phase: \(phase)") }
                 if let commit = record.commit { print("Commit candidate: \(commit)") }
                 if let detail = record.detail { print(detail) }
             } else { print("No BSA sessions recorded for this repository.") }

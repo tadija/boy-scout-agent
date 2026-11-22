@@ -134,6 +134,32 @@ final class RunnerTests: XCTestCase {
         XCTAssertTrue(try git(["log", "-1", "--format=%s", record.branch]).hasPrefix("bsa: "))
     }
 
+    func testPhaseTimingsPersistAndOldRecordsRemainReadable() throws {
+        var progress: [String] = []
+        let record = try Runner().run(at: checkout, harness: FakeHarness(action: { cwd in
+            let active = try XCTUnwrap(Runner().status(at: self.checkout, dataDirectory: self.data))
+            XCTAssertEqual(active.phase, "Harness")
+            try self.write("value.txt", "after\n", at: cwd)
+            return self.success()
+        }), dataDirectory: data, onProgress: { progress.append($0) })
+        XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
+        let phases = ["Setup", "Baseline checks", "Harness", "Review", "Verification", "Publication", "Cleanup"]
+        XCTAssertEqual(progress, phases.map { $0 + "…" })
+        let timings = try XCTUnwrap(record.phaseSeconds)
+        XCTAssertEqual(Set(timings.keys), Set(phases))
+        XCTAssertTrue(timings.values.allSatisfy { $0 >= 0 && $0.isFinite })
+        XCTAssertLessThanOrEqual(timings.values.reduce(0, +), try XCTUnwrap(record.finished).timeIntervalSince(record.started))
+        XCTAssertNil(record.phase)
+        XCTAssertEqual(try Runner().status(at: checkout, dataDirectory: data)?.phaseSeconds, timings)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
+        legacy.removeValue(forKey: "phaseSeconds")
+        legacy.removeValue(forKey: "phase")
+        let decoded = try JSONDecoder().decode(Record.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(decoded.phaseSeconds)
+        XCTAssertNil(decoded.phase)
+        XCTAssertEqual(decoded.commit, record.commit)
+    }
+
     func testNoCandidateDoesNotCommit() throws {
         let record = try run { _ in self.success() }
         XCTAssertEqual(record.outcome, "no_candidate")
@@ -145,6 +171,10 @@ final class RunnerTests: XCTestCase {
             return CommandResult(status: 1, output: "failure", timedOut: false)
         }
         XCTAssertEqual(record.outcome, "harness_failed")
+        XCTAssertNotNil(record.phaseSeconds?["Harness"])
+        XCTAssertNotNil(record.phaseSeconds?["Cleanup"])
+        XCTAssertNil(record.phaseSeconds?["Verification"])
+        XCTAssertNil(record.phase)
         try assertNoCommit()
     }
     func testVerificationFailureDoesNotCommit() throws {

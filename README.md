@@ -32,6 +32,8 @@ For a longer run, set an iteration limit and optionally choose the agent.
 bsa run --count 10 --harness claude
 ```
 
+BSA reports the current phase on stderr and prints total and per-phase timings after each iteration. `bsa status` also shows the active phase. Timings include baseline checks, harness work, and independent verification; checks run twice, and fresh worktrees may require fresh builds.
+
 BSA starts each iteration with a fresh agent and recent run history. Run it again to continue improving the same branch.
 
 ## Documentation

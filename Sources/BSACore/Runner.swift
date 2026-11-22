@@ -34,7 +34,7 @@ public final class Runner {
     }
 
     public func runSession(at directory: URL, configuration: Configuration, harness: any HarnessAdapter,
-                           dataDirectory: URL? = nil, deadline: Date? = nil, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
+                           dataDirectory: URL? = nil, deadline: Date? = nil, onProgress: (String) -> Void = { _ in }, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
         try configuration.validate()
         let repo = try Repository(at: directory)
         let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
@@ -49,10 +49,11 @@ public final class Runner {
         var records: [Record] = []
         var failures = 0
         var empty = 0
-        for _ in 0..<configuration.maxIterations {
+        for index in 0..<configuration.maxIterations {
             if Cancellation.shouldStop || deadline.map({ Date() >= $0 }) == true { break }
+            onProgress("Iteration \(index + 1) of \(configuration.maxIterations)")
             let budget = min(configuration.timeoutSeconds, deadline?.timeIntervalSinceNow ?? .infinity)
-            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, deadline: ProcessInfo.processInfo.systemUptime + budget)
+            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, deadline: ProcessInfo.processInfo.systemUptime + budget, onProgress: onProgress)
             records.append(record)
             onIteration(record)
             failures = ["committed", "no_candidate"].contains(record.outcome) ? 0 : failures + 1
@@ -63,7 +64,7 @@ public final class Runner {
     }
 
     public func run(at directory: URL, configuration: Configuration? = nil,
-                    harness: HarnessAdapter = CodexAdapter(), dataDirectory: URL? = nil) throws -> Record {
+                    harness: HarnessAdapter = CodexAdapter(), dataDirectory: URL? = nil, onProgress: (String) -> Void = { _ in }) throws -> Record {
         let repo = try Repository(at: directory)
         let config = try configuration ?? Configuration.load(repository: repo)
         try config.validate()
@@ -76,11 +77,11 @@ public final class Runner {
         Cancellation.stopFile = stop
         defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
         try harness.detect(in: repo.root)
-        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds)
+        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds, onProgress: onProgress)
     }
 
     private func iteration(repo: Repository, config: Configuration, harness: any HarnessAdapter,
-                           store: StateStore, sessionID: String, deadline: TimeInterval) throws -> Record {
+                           store: StateStore, sessionID: String, deadline: TimeInterval, onProgress: (String) -> Void) throws -> Record {
         let history = try store.latest
         if let previous = history, previous.outcome == "running" {
             var recovered = previous
@@ -88,6 +89,7 @@ public final class Runner {
                 recovered.outcome = "committed"
                 try store.own(branch: previous.branch, commit: commit)
             } else { recovered.outcome = "interrupted" }
+            recovered.phase = nil
             recovered.finished = Date()
             recovered.detail = "Recovered after interruption. Abandoned worktrees are preserved at " + store.directory.path
             try store.save(recovered)
@@ -118,6 +120,20 @@ public final class Runner {
         record.sessionID = sessionID
         record.harness = harness.name
         try store.save(record)
+        var phaseStarted = ProcessInfo.processInfo.systemUptime
+        func finishPhase() {
+            if let phase = record.phase {
+                if record.phaseSeconds == nil { record.phaseSeconds = [:] }
+                record.phaseSeconds?[phase] = ProcessInfo.processInfo.systemUptime - phaseStarted
+            }
+        }
+        func beginPhase(_ phase: String) throws {
+            finishPhase()
+            record.phase = phase
+            phaseStarted = ProcessInfo.processInfo.systemUptime
+            try store.save(record)
+            onProgress(phase + "…")
+        }
         var worktrees: [URL] = []
         func remaining() -> TimeInterval { max(0.001, deadline - ProcessInfo.processInfo.systemUptime) }
         func checkBudget() throws {
@@ -160,6 +176,7 @@ public final class Runner {
         }
         do {
             try checkBudget()
+            try beginPhase("Setup")
             try addWorktree(worktree)
             let refs = try repo.refs()
             let verification: [String]
@@ -178,6 +195,7 @@ public final class Runner {
                     throw BSAError.message("Harness or checks changed HEAD or repository refs")
                 }
             }
+            try beginPhase("Baseline checks")
             try checks(verification, at: worktree, baseline: true)
             try assertGit(at: worktree)
             try stage(at: worktree)
@@ -185,6 +203,7 @@ public final class Runner {
                 throw BSAError.message("Baseline checks modified repository files")
             }
             try checkBudget()
+            try beginPhase("Harness")
             let response: CommandResult
             do {
                 response = try harness.run(prompt: Planner.prompt(history: config.instructions + "\nExplore neglected areas; avoid repeating unchanged failed tasks. Recent paths: " + recent.flatMap(\.paths).prefix(30).joined(separator: ", ") + "\n" + recent.map {
@@ -194,6 +213,7 @@ public final class Runner {
                 record.outcome = Cancellation.shouldStop ? "cancelled" : "harness_failed"
                 throw error
             }
+            try beginPhase("Review")
             record.task = String(response.output.suffix(8192))
             try checkBudget()
             if response.timedOut { throw BSAError.message("timed_out") }
@@ -208,6 +228,7 @@ public final class Runner {
                 let tree = try repo.git(["write-tree"], at: worktree)
                 _ = try repo.git(["diff", "--cached", "--check"], at: worktree)
                 try checkBudget()
+                try beginPhase("Verification")
                 let verificationTree = store.directory.appendingPathComponent("verify-" + id)
                 try addWorktree(verificationTree)
                 try repo.git(["read-tree", "--reset", "-u", tree], at: verificationTree)
@@ -222,6 +243,7 @@ public final class Runner {
                     throw BSAError.message("Verification modified the proposed change")
                 }
                 try checkBudget()
+                try beginPhase("Publication")
                 try repo.requireUncheckedOut(target)
                 let summary = response.output.split(separator: "\n").first.map { String($0.prefix(100)) } ?? "Improve repository"
                 let commit = try repo.git(["commit-tree", tree, "-p", baseline, "-m", "bsa: " + summary], at: worktree)
@@ -244,6 +266,8 @@ public final class Runner {
             if record.outcome == "committed" { record.terminal = true }
             record.detail = String(describing: error)
         }
+        // Cleanup must still run if persisting its phase fails.
+        try? beginPhase("Cleanup")
         for directory in worktrees.reversed() {
             do {
                 if ["cancelled", "timed_out"].contains(record.outcome) {
@@ -257,6 +281,8 @@ public final class Runner {
                 record.detail = (record.detail.map { $0 + "\n" } ?? "") + "Cleanup failed; inspect \(directory.path): \(error)"
             }
         }
+        finishPhase()
+        record.phase = nil
         record.finished = Date()
         try store.save(record)
         return record
