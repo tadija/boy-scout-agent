@@ -10,6 +10,9 @@ public struct Repository {
         func resolve(_ args: [String]) throws -> String {
             let result = try commands.run("/usr/bin/env", ["git"] + args, cwd: directory)
             guard result.status == 0 else { throw BSAError.message("Not a supported Git checkout: \(result.output)") }
+            guard !result.outputTruncated, result.outputIsUTF8 else {
+                throw BSAError.message("Git output exceeds the 1 MiB limit or is not valid UTF-8")
+            }
             return result.output.hasSuffix("\n") ? String(result.output.dropLast()) : result.output
         }
         root = URL(fileURLWithPath: try resolve(["rev-parse", "--show-toplevel"])).standardizedFileURL.resolvingSymlinksInPath()
