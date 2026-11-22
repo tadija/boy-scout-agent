@@ -11,7 +11,7 @@ let version = "0.1.0"
 let help = """
 Boy Scout Agent — one run, one improvement, one commit.
 
-Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV] [--force]
+Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV] [--force] [--identity VALUE]
        bsa schedule add --at HH:MM --duration 4h | list | remove ID
        bsa stop | history | doctor | harnesses | config show
        bsa status
@@ -21,6 +21,7 @@ Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--b
 Runs fresh isolated iterations with Codex, Claude Code, Pi or OpenCode. Swift packages use swift test automatically;
 other projects need verification commands in bsa.json. Push requires explicit configuration.
 --force adopts an existing target branch and continues from its tip, even if it diverged from the base.
+--identity accepts "Name <email>" (default: Boy Scout Agent <boy-scout-agent@localhost>) or git for your configured Git identity.
 State: $XDG_DATA_HOME/bsa (default ~/.local/share/bsa).
 """
 
@@ -46,7 +47,7 @@ do {
                     index += 1
                     continue
                 }
-                guard ["--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
+                guard ["--identity", "--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
                     throw BSAError.message("Unknown or incomplete option: \(args[index]). See bsa --help.")
                 }
                 if args[index] == "--duration" {
@@ -57,6 +58,7 @@ do {
                     deadline = try ExecutionWindow.until(args[index + 1]) }
                 else if args[index] == "--branch" { configuration.branch = args[index + 1] }
                 else if args[index] == "--base" { configuration.base = args[index + 1] }
+                else if args[index] == "--identity" { configuration.commitIdentity = args[index + 1] }
                 else if args[index] == "--harness" { configuration.harness = args[index + 1] }
                 else {
                     guard let count = Int(args[index + 1]), count > 0 else { throw BSAError.message("--count requires a positive integer") }

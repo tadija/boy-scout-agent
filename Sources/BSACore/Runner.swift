@@ -250,7 +250,7 @@ public final class Runner {
                 try beginPhase("Publication")
                 try repo.requireUncheckedOut(target)
                 let summary = response.output.split(separator: "\n").first.map { String($0.prefix(100)) } ?? "Improve repository"
-                let commit = try repo.git(["commit-tree", tree, "-p", baseline, "-m", "bsa: " + summary], at: worktree)
+                let commit = try repo.git(["commit-tree", tree, "-p", baseline, "-m", "bsa: " + summary], at: worktree, environment: try config.commitEnvironment())
                 // Persist the candidate before publication so an interrupted record is auditable.
                 record.commit = commit
                 try store.save(record)

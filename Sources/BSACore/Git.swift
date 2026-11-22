@@ -22,9 +22,9 @@ public struct Repository {
     }
 
     @discardableResult
-    public func git(_ args: [String], at cwd: URL? = nil) throws -> String {
+    public func git(_ args: [String], at cwd: URL? = nil, environment: [String: String] = [:]) throws -> String {
         let result = try commands.run("/usr/bin/env", ["git", "-c", "core.hooksPath=/dev/null"] + args,
-                                      cwd: cwd ?? root, environment: ["GIT_TERMINAL_PROMPT": "0", "GIT_NO_REPLACE_OBJECTS": "1"], cancellable: false)
+                                      cwd: cwd ?? root, environment: environment.merging(["GIT_TERMINAL_PROMPT": "0", "GIT_NO_REPLACE_OBJECTS": "1"]) { _, required in required }, cancellable: false)
         guard result.status == 0 else { throw BSAError.message("git \(args.first ?? ""): \(result.output)") }
         guard !result.outputTruncated, result.outputIsUTF8 else {
             throw BSAError.message("Git output exceeds the 1 MiB limit or is not valid UTF-8")

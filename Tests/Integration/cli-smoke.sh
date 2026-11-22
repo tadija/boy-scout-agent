@@ -36,7 +36,7 @@ printf 'uncommitted user work\n' > value.txt
 git branch bsa/project
 if "$bsa" run > "$fixture/unowned" 2>&1; then exit 1; fi
 grep -q 'use --force' "$fixture/unowned"
-"$bsa" run --force > "$fixture/run" 2> "$fixture/progress"
+"$bsa" run --force --identity "CLI Scout <cli@example.invalid>" > "$fixture/run" 2> "$fixture/progress"
 "$bsa" status > "$fixture/status"
 grep -q 'Baseline checks' "$fixture/progress"
 grep -q 'Harness' "$fixture/progress"
@@ -47,6 +47,9 @@ grep -q 'Outcome: committed' "$fixture/status"
 [ "$(git rev-list --all --count)" = 2 ]
 [ "$(cat value.txt)" = 'uncommitted user work' ]
 [ "$(git show bsa/project:value.txt)" = after ]
+[ "$(git show -s --format='%an <%ae>|%cn <%ce>' bsa/project)" = 'CLI Scout <cli@example.invalid>|CLI Scout <cli@example.invalid>' ]
+[ "$(git config user.name)" = 'BSA Test' ]
+[ "$(git config user.email)" = 'bsa@example.invalid' ]
 [ "$(git symbolic-ref --short HEAD)" = main ]
 "$bsa" run --count 100 > "$fixture/empty"
 grep -q 'Stopped after 2 consecutive attempts without a candidate' "$fixture/empty"

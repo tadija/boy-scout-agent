@@ -112,6 +112,40 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertEqual(decoded.commit, record.commit)
     }
 
+    func testCommitIdentitiesSetAuthorAndCommitterWithoutChangingGitConfig() throws {
+        let inheritedAuthor = ProcessInfo.processInfo.environment["GIT_AUTHOR_NAME"]
+        for (index, identity) in ["Boy Scout Agent <boy-scout-agent@localhost>", "Custom Scout <custom@example.invalid>", "git"].enumerated() {
+            var config = try Configuration.load(repository: Repository(at: checkout))
+            if index != 0 { config.commitIdentity = identity }
+            config.branch = "identity-\(index)"
+            let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+                XCTAssertEqual(ProcessInfo.processInfo.environment["GIT_AUTHOR_NAME"], inheritedAuthor)
+                try self.write("value.txt", "identity change\n", at: cwd)
+                return self.success()
+            }, dataDirectory: data)
+            XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
+            let expected = identity == "git" ? "BSA Test <test@example.invalid>" : identity
+            XCTAssertEqual(try git(["show", "-s", "--format=%an <%ae>|%cn <%ce>", try XCTUnwrap(record.commit)]), expected + "|" + expected)
+            XCTAssertEqual(try git(["config", "user.name"]), "BSA Test")
+            XCTAssertEqual(try git(["config", "user.email"]), "test@example.invalid")
+        }
+    }
+
+    func testCommitIdentityConfigAndValidation() throws {
+        try write("bsa.json", #"{"commitIdentity":"Config Scout <config@example.invalid>"}"#)
+        let loaded = try Configuration.load(repository: Repository(at: checkout))
+        XCTAssertEqual(loaded.commitIdentity, "Config Scout <config@example.invalid>")
+        XCTAssertEqual(try loaded.commitEnvironment()["GIT_AUTHOR_EMAIL"], "config@example.invalid")
+        for identity in ["", "Scout", "<email>", "Scout <>", "Scout <a b>", "Scout <a> trailing", "Scout\nOther <email>", "Scout <a\0b>", "Scout <<email>>"] {
+            var config = Configuration()
+            config.commitIdentity = identity
+            XCTAssertThrowsError(try config.validate(), identity)
+        }
+        var config = Configuration()
+        config.commitIdentity = "git"
+        XCTAssertEqual(try config.commitEnvironment(), [:])
+    }
+
     func testNoCandidateDoesNotCommit() throws {
         let record = try run { _ in self.success() }
         XCTAssertEqual(record.outcome, "no_candidate")
