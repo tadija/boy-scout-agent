@@ -6,12 +6,12 @@ import Glibc
 import Darwin
 #endif
 
-let version = "0.1.0"
+let version = "0.1.1"
 
 let help = """
 Boy Scout Agent — one run, one improvement, one commit.
 
-Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV] [--force] [--identity VALUE]
+Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV] [--force] [--identity VALUE] [--instructions TEXT]
        bsa schedule add --at HH:MM --duration 4h | list | remove ID
        bsa stop | history | doctor | harnesses | config show
        bsa status
@@ -19,9 +19,10 @@ Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--b
        bsa --version
 
 Runs fresh isolated iterations with Codex, Claude Code, Pi or OpenCode. Swift packages use swift test automatically;
-other projects need verification commands in bsa.json. Push requires explicit configuration.
+other projects need verification commands in bsa.json (or explicit [] to skip them). Push requires explicit configuration.
 --force adopts an existing target branch and continues from its tip, even if it diverged from the base.
 --identity accepts "Name <email>" (default: Boy Scout Agent <boy-scout-agent@localhost>) or git for your configured Git identity.
+--instructions supplies project guidance for this run, overriding configured instructions.
 State: $XDG_DATA_HOME/bsa (default ~/.local/share/bsa).
 """
 
@@ -47,7 +48,7 @@ do {
                     index += 1
                     continue
                 }
-                guard ["--identity", "--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
+                guard ["--instructions", "--identity", "--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
                     throw BSAError.message("Unknown or incomplete option: \(args[index]). See bsa --help.")
                 }
                 if args[index] == "--duration" {
@@ -58,6 +59,7 @@ do {
                     deadline = try ExecutionWindow.until(args[index + 1]) }
                 else if args[index] == "--branch" { configuration.branch = args[index + 1] }
                 else if args[index] == "--base" { configuration.base = args[index + 1] }
+                else if args[index] == "--instructions" { configuration.instructions = args[index + 1] }
                 else if args[index] == "--identity" { configuration.commitIdentity = args[index + 1] }
                 else if args[index] == "--harness" { configuration.harness = args[index + 1] }
                 else {
@@ -73,7 +75,7 @@ do {
             }) { record in
                 print("\(record.outcome) on \(record.branch)\(record.commit.map { " (\($0))" } ?? "")")
                 if let finished = record.finished {
-                    let phases = ["Setup", "Baseline checks", "Harness", "Review", "Verification", "Publication", "Cleanup"]
+                    let phases = ["Setup", "Baseline", "Harness", "Review", "Verification", "Publication", "Cleanup"]
                     let timings = phases.compactMap { phase in
                         record.phaseSeconds?[phase].map { "\(phase): \(String(format: "%.1fs", $0))" }
                     }
@@ -129,7 +131,10 @@ do {
             let configuration = try Configuration.load(repository: Repository(at: directory))
             let harness = try Harnesses.select(configuration: configuration, directory: directory)
             try harness.detect(in: directory)
-            print("Git repository OK. Harness: \(harness.name). Verification: \(configuration.verification?.joined(separator: "; ") ?? "automatic Swift detection; otherwise configure verification")")
+            func describe(_ commands: [String]?) -> String? {
+                commands.map { $0.isEmpty ? "skipped" : $0.joined(separator: "; ") }
+            }
+            print("Git repository OK. Harness: \(harness.name). Baseline: \(describe(configuration.baseline) ?? "same as verification"). Verification: \(describe(configuration.verification) ?? "automatic Swift detection; otherwise configure verification")")
         case "history":
             guard args.count == 1 else { throw BSAError.message("history takes no options") }
             for record in try runner.history(at: directory) {

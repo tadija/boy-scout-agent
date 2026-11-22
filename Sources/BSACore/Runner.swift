@@ -187,9 +187,9 @@ public final class Runner {
             if let configured = config.verification { verification = configured }
             else if FileManager.default.fileExists(atPath: worktree.appendingPathComponent("Package.swift").path) { verification = ["swift test"] }
             else { verification = [] }
-            guard !verification.isEmpty else {
+            guard config.verification != nil || !verification.isEmpty else {
                 record.terminal = true
-                throw BSAError.message("No meaningful verification detected. Configure verification commands in bsa.json (Swift packages use swift test automatically).")
+                throw BSAError.message("No meaningful verification detected. Configure verification commands in bsa.json, or explicitly set verification to [] to skip them (Swift packages use swift test automatically).")
             }
             func assertGit(at directory: URL) throws {
                 guard try repo.git(["rev-parse", "HEAD"], at: directory) == baseline,
@@ -199,8 +199,12 @@ public final class Runner {
                     throw BSAError.message("Harness or checks changed HEAD or repository refs")
                 }
             }
-            try beginPhase("Baseline checks")
-            try checks(verification, at: worktree, baseline: true)
+            let baselineCommands = config.baseline ?? verification
+            if baselineCommands.isEmpty { onProgress("Baseline skipped (empty command list)") }
+            else {
+                try beginPhase("Baseline")
+                try checks(baselineCommands, at: worktree, baseline: true)
+            }
             try assertGit(at: worktree)
             try stage(at: worktree)
             guard try repo.git(["diff", "--cached", "--name-only"], at: worktree).isEmpty else {
@@ -232,7 +236,8 @@ public final class Runner {
                 let tree = try repo.git(["write-tree"], at: worktree)
                 _ = try repo.git(["diff", "--cached", "--check"], at: worktree)
                 try checkBudget()
-                try beginPhase("Verification")
+                if verification.isEmpty { onProgress("Verification skipped (empty command list)") }
+                else { try beginPhase("Verification") }
                 let verificationTree = store.directory.appendingPathComponent("verify-" + id)
                 try addWorktree(verificationTree)
                 try repo.git(["read-tree", "--reset", "-u", tree], at: verificationTree)

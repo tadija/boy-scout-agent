@@ -95,7 +95,7 @@ final class RunnerTests: RepositoryTestCase {
             return self.success()
         }), dataDirectory: data, onProgress: { progress.append($0) })
         XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
-        let phases = ["Setup", "Baseline checks", "Harness", "Review", "Verification", "Publication", "Cleanup"]
+        let phases = ["Setup", "Baseline", "Harness", "Review", "Verification", "Publication", "Cleanup"]
         XCTAssertEqual(progress, phases.map { $0 + "…" })
         let timings = try XCTUnwrap(record.phaseSeconds)
         XCTAssertEqual(Set(timings.keys), Set(phases))
@@ -144,6 +144,63 @@ final class RunnerTests: RepositoryTestCase {
         var config = Configuration()
         config.commitIdentity = "git"
         XCTAssertEqual(try config.commitEnvironment(), [:])
+    }
+
+    func testBaselineAndVerificationCanBeConfiguredOrSkippedIndependently() throws {
+        let before = "test $(cat value.txt) = before"
+        let after = "test $(cat value.txt) = after"
+        for (index, commands) in [([], [after]), ([before], []), ([], []), ([before], [after])].enumerated() {
+            var config = Configuration()
+            config.branch = "checks-\(index)"
+            config.baseline = commands.0
+            config.verification = commands.1
+            let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+                try self.write("value.txt", "after\n", at: cwd)
+                return self.success()
+            }, dataDirectory: data)
+            XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
+            XCTAssertEqual(record.baselineChecks.map(\.command), commands.0)
+            XCTAssertEqual(record.checks.map(\.command), commands.1)
+            XCTAssertTrue((record.baselineChecks + record.checks).allSatisfy { $0.status == 0 })
+            XCTAssertEqual(record.phaseSeconds?["Baseline"] == nil, commands.0.isEmpty)
+            XCTAssertEqual(record.phaseSeconds?["Verification"] == nil, commands.1.isEmpty)
+        }
+    }
+
+    func testExplicitEmptyVerificationOverridesSwiftDetectionAndDefaultsBaselineToEmpty() throws {
+        try write("Package.swift", "Not a Swift manifest; explicit [] must prevent swift test\n")
+        try write("bsa.json", #"{"verification":[]}"#)
+        try git(["add", "."])
+        try git(["commit", "-m", "Configure skipped tests"])
+        let record = try run { cwd in
+            try self.write("value.txt", "after\n", at: cwd)
+            return self.success()
+        }
+        XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
+        XCTAssertTrue(record.baselineChecks.isEmpty)
+        XCTAssertTrue(record.checks.isEmpty)
+    }
+
+    func testSkippingCommandsKeepsProtectedPathGuards() throws {
+        try write("bsa.json", #"{"baseline":[],"verification":[]}"#)
+        try git(["commit", "-am", "Skip commands"])
+        let record = try run { cwd in
+            try self.write(".env", "fixture-not-a-secret", at: cwd)
+            return self.success()
+        }
+        XCTAssertEqual(record.outcome, "rejected")
+
+        XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "2")
+        XCTAssertEqual(try git(["branch", "--list", "bsa/project"]), "")
+    }
+
+    func testBaselineConfigRejectsEmptyCommandsButAcceptsEmptyArray() throws {
+        try write("bsa.json", #"{"baseline":[],"verification":[]}"#)
+        let config = try Configuration.load(repository: Repository(at: checkout))
+        XCTAssertEqual(config.baseline, [])
+        XCTAssertEqual(config.verification, [])
+        try write("bsa.json", #"{"baseline":["  "],"verification":[]}"#)
+        XCTAssertThrowsError(try Configuration.load(repository: Repository(at: checkout)))
     }
 
     func testNoCandidateDoesNotCommit() throws {

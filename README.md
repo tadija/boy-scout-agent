@@ -18,7 +18,7 @@ bsa --version
 
 ## Run on any project
 
-Open a trusted repository with at least one commit. Swift packages use `swift test` automatically. For other projects, configure a verification command before your first run. See [repository configuration](Docs/Configuration.md).
+Open a trusted repository with at least one commit. Swift packages use `swift test` automatically. For other projects, configure verification commands or explicitly set `verification` to `[]` to skip project checks. See [repository configuration](Docs/Configuration.md).
 
 ```sh
 bsa run
@@ -53,11 +53,12 @@ For a longer run, set an iteration limit and optionally choose the agent.
 
 ```sh
 bsa run --count 10 --harness claude
+bsa run --instructions "Focus on error handling; preserve public APIs."
 bsa run --count 5 --harness codex --branch bsa/polish
 bsa run --count 100 --duration 4h
 ```
 
-BSA reports the current phase on stderr and prints total and per-phase timings after each iteration. `bsa status` also shows the active phase. Timings include baseline checks, harness work, and independent verification; checks run twice, and fresh worktrees may require fresh builds.
+BSA reports the current phase on stderr and prints total and per-phase timings after each iteration. `bsa status` also shows the active phase. Timings include baseline checks, harness work, and independent verification; by default, checks run twice, and fresh worktrees may require fresh builds. Configure `baseline` and `verification` separately, or set either to `[]` to skip its commands.
 
 BSA starts each iteration with a fresh agent and recent run history. Run it again to continue improving the same branch.
 

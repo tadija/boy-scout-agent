@@ -195,6 +195,8 @@ Verification has three layers:
 2. **Project checks:** configured or safely detected build, test, lint, typecheck commands, compared with baseline.
 3. **Review:** harness self-review and BSA prompt-based diff assessment; this is supplementary, not proof of correctness.
 
+The `baseline` command list defaults to the resolved `verification` list. Explicit empty arrays skip the corresponding project commands while retaining Git and diff guards; `verification: []` is the explicit opt-in to publishing without project verification. Omitted verification still uses Swift detection or fails when no commands are known.
+
 If no executable project checks can be determined, do not pretend the change is verified. Default to a conservative policy: require explicit opt-in to auto-commit changes that lack meaningful verification, or restrict to changes with reliable mechanical checks. Explain how to configure checks. Checks that run repository code are potentially unsafe and should be executed only in trusted/sandboxed environments.
 
 ## 14. Acceptance criteria

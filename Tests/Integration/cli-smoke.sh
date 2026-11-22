@@ -13,6 +13,7 @@ if [ "$2" = --help ]; then
   echo '--sandbox --cd --output-last-message'
   exit 0
 fi
+if [ -n "${BSA_TEST_PROMPT:-}" ]; then printf '%s\n' "$8" > "$BSA_TEST_PROMPT"; fi
 printf 'after\n' > value.txt
 printf 'Correct the value fixture\n' > "$7"
 CODEX
@@ -20,14 +21,14 @@ chmod +x "$fixture/bin/codex"
 export PATH="$fixture/bin:$PATH"
 export XDG_DATA_HOME="$fixture/data"
 cd "$fixture"
-[ "$("$bsa" --version)" = "Boy Scout Agent 0.1.0" ]
+[ "$("$bsa" --version)" = "Boy Scout Agent 0.1.1" ]
 if "$bsa" --version extra > "$fixture/invalid-version" 2>&1; then exit 1; fi
 cd "$fixture/project"
 git init -q -b main
 git config user.name 'BSA Test'
 git config user.email 'bsa@example.invalid'
 printf 'before\n' > value.txt
-printf '{"verification":["test -s value.txt"]}\n' > bsa.json
+printf '{"verification":["test -s value.txt"],"instructions":"CONFIG_INSTRUCTIONS_MUST_BE_OVERRIDDEN"}\n' > bsa.json
 git add .
 git commit -qm Initial
 printf 'uncommitted user work\n' > value.txt
@@ -36,9 +37,15 @@ printf 'uncommitted user work\n' > value.txt
 git branch bsa/project
 if "$bsa" run > "$fixture/unowned" 2>&1; then exit 1; fi
 grep -q 'use --force' "$fixture/unowned"
-"$bsa" run --force --identity "CLI Scout <cli@example.invalid>" > "$fixture/run" 2> "$fixture/progress"
+export BSA_TEST_PROMPT="$fixture/prompt"
+instructions='Focus on error handling; preserve "$HOME" and `literal` text.'
+if "$bsa" run --instructions > "$fixture/missing-instructions" 2>&1; then exit 1; fi
+"$bsa" run --force --identity "CLI Scout <cli@example.invalid>" --instructions "$instructions" > "$fixture/run" 2> "$fixture/progress"
+grep -Fq -- "$instructions" "$BSA_TEST_PROMPT"
+if grep -q 'CONFIG_INSTRUCTIONS_MUST_BE_OVERRIDDEN' "$BSA_TEST_PROMPT"; then exit 1; fi
+unset BSA_TEST_PROMPT
 "$bsa" status > "$fixture/status"
-grep -q 'Baseline checks' "$fixture/progress"
+grep -q 'Baseline' "$fixture/progress"
 grep -q 'Harness' "$fixture/progress"
 grep -q 'Verification' "$fixture/progress"
 grep -q 'Time: .*Harness: .*Verification:' "$fixture/run"
@@ -110,4 +117,11 @@ if wait "$active"; then exit 1; fi
 grep -q 'cancelled on' "$fixture/slow"
 [ "$(git rev-list --all --count)" = 2 ]
 [ "$(cat value.txt)" = 'uncommitted user work' ]
+printf '%s\n' '{"baseline":[],"verification":[]}' > bsa.json
+"$bsa" run --branch bsa/skipped > "$fixture/skipped" 2> "$fixture/skipped-progress"
+grep -q 'Baseline skipped' "$fixture/skipped-progress"
+grep -q 'Verification skipped' "$fixture/skipped-progress"
+grep -q 'committed on bsa/skipped' "$fixture/skipped"
+"$bsa" doctor > "$fixture/skipped-doctor"
+grep -q 'Baseline: skipped. Verification: skipped' "$fixture/skipped-doctor"
 printf 'CLI smoke test passed\n'

@@ -12,6 +12,7 @@ public struct Configuration: Codable {
     public var saturationLimit: Int = 2
     public var branch: String?
     public var base: String?
+    public var baseline: [String]?
     public var verification: [String]?
     public var timeoutSeconds: Double = 1800
     public var maxChangedFiles: Int = 12
@@ -28,7 +29,7 @@ public struct Configuration: Codable {
             dictionary.merge(values) { _, new in new }
         }
         guard
-              Set(dictionary.keys).isSubset(of: ["commitIdentity", "branch", "base", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "instructions", "maxIterations", "failureLimit", "saturationLimit", "push", "protectedPaths"]) else {
+              Set(dictionary.keys).isSubset(of: ["commitIdentity", "branch", "base", "baseline", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "instructions", "maxIterations", "failureLimit", "saturationLimit", "push", "protectedPaths"]) else {
             throw BSAError.message("bsa.json contains unknown keys or is not an object")
         }
         let defaults: [String: Any] = ["commitIdentity": "Boy Scout Agent <boy-scout-agent@localhost>", "protectedPaths": [String](), "push": false, "timeoutSeconds": 1800, "maxChangedFiles": 12, "instructions": "", "maxIterations": 1, "failureLimit": 3, "saturationLimit": 2]
@@ -61,6 +62,7 @@ public struct Configuration: Codable {
               customCommand.map({ !$0.isEmpty && !$0[0].isEmpty }) ?? true,
               timeoutSeconds.isFinite, timeoutSeconds > 0, timeoutSeconds <= 86400,
               maxChangedFiles > 0, maxChangedFiles <= 100,
+              baseline?.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? true,
               verification?.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? true else {
             throw BSAError.message("Invalid limits or empty verification command in bsa.json")
         }
