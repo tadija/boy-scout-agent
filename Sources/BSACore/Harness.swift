@@ -21,7 +21,7 @@ public struct CodexAdapter: HarnessAdapter {
         defer { try? FileManager.default.removeItem(at: message) }
         let result = try commands.run("/usr/bin/env", ["codex", "--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--cd", cwd.path,
             "--output-last-message", message.path, prompt], cwd: cwd, timeout: timeout)
-        let final = (try? String(contentsOf: message)) ?? result.output
+        let final = (try? String(contentsOf: message, encoding: .utf8)) ?? result.output
         return CommandResult(status: result.status, output: final, timedOut: result.timedOut)
     }
 }
