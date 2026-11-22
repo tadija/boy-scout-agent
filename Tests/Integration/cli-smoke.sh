@@ -19,6 +19,9 @@ CODEX
 chmod +x "$fixture/bin/codex"
 export PATH="$fixture/bin:$PATH"
 export XDG_DATA_HOME="$fixture/data"
+cd "$fixture"
+[ "$("$bsa" --version)" = "Boy Scout Agent 0.1.0" ]
+if "$bsa" --version extra > "$fixture/invalid-version" 2>&1; then exit 1; fi
 cd "$fixture/project"
 git init -q -b main
 git config user.name 'BSA Test'

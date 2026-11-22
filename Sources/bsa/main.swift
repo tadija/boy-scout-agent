@@ -6,6 +6,8 @@ import Glibc
 import Darwin
 #endif
 
+let version = "0.1.0"
+
 let help = """
 Boy Scout Agent — one run, one improvement, one commit.
 
@@ -14,6 +16,7 @@ Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--b
        bsa stop | history | doctor | harnesses | config show
        bsa status
        bsa --help
+       bsa --version
 
 Runs fresh isolated iterations with Codex, Claude Code, Pi or OpenCode. Swift packages use swift test automatically;
 other projects need verification commands in bsa.json. Push requires explicit configuration.
@@ -25,6 +28,8 @@ do {
     let args = Array(CommandLine.arguments.dropFirst())
     if args.isEmpty || args == ["--help"] || args == ["-h"] || args == ["help"] || args == ["run", "--help"] || args == ["status", "--help"] {
         print(help)
+    } else if args == ["--version"] {
+        print("Boy Scout Agent \(version)")
     } else {
         let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let runner = Runner()

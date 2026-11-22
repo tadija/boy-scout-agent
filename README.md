@@ -11,6 +11,7 @@ swift build -c release
 mkdir -p ~/.local/bin
 cp .build/release/bsa ~/.local/bin/bsa
 export PATH="$HOME/.local/bin:$PATH"
+bsa --version
 ```
 
 ## Improve a project
@@ -38,3 +39,7 @@ BSA starts each iteration with a fresh agent and recent run history. Run it agai
 - [Repository configuration](Docs/Configuration.md) covers verification commands, harness selection, protected paths, and run limits.
 - [Operations guide](Docs/Operations.md) covers overnight runs, recurring schedules, history, and recovery.
 - [Specification](Docs/Specs.md) describes the iteration lifecycle, verification contract, and three development prompts.
+
+---
+
+`done for fun`
