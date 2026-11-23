@@ -64,7 +64,7 @@ public final class Runner {
     }
 
     public func run(at directory: URL, configuration: Configuration? = nil,
-                    harness: HarnessAdapter = CodexAdapter(), dataDirectory: URL? = nil, force: Bool = false, onProgress: (String) -> Void = { _ in }) throws -> Record {
+                    harness: HarnessAdapter = Harnesses.builtins[0], dataDirectory: URL? = nil, force: Bool = false, onProgress: (String) -> Void = { _ in }) throws -> Record {
         let repo = try Repository(at: directory)
         let config = try configuration ?? Configuration.load(repository: repo)
         try config.validate()

@@ -41,7 +41,7 @@ final class ExternalIntegrationTests: RepositoryTestCase {
         XCTAssertEqual(record.paths, ["Sources/Fixture/Value.swift"])
     }
 
-    func testCodexAdapterWithFakeExecutableEndToEnd() throws {
+    func testCodexBuiltinWithFakeExecutableEndToEnd() throws {
         let bin = temporary.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let executable = bin.appendingPathComponent("codex")
@@ -66,7 +66,7 @@ final class ExternalIntegrationTests: RepositoryTestCase {
         let previous = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
         setenv("PATH", bin.path + ":" + previous, 1)
         defer { setenv("PATH", previous, 1) }
-        let record = try Runner().run(at: checkout, harness: CodexAdapter(), dataDirectory: data)
+        let record = try Runner().run(at: checkout, harness: try XCTUnwrap(Harnesses.builtins.first { $0.name == "codex" }), dataDirectory: data)
         XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
         XCTAssertEqual(try git(["log", "-1", "--format=%s", record.branch]), "bsa: Correct the fixture value")
         XCTAssertFalse(record.task?.contains("noisy harness") ?? true)

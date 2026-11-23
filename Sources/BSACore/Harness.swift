@@ -6,26 +6,6 @@ public protocol HarnessAdapter {
     func run(prompt: String, cwd: URL, timeout: TimeInterval) throws -> CommandResult
 }
 
-public struct CodexAdapter: HarnessAdapter {
-    public let name = "codex"
-    private let commands = CommandRunner()
-    public init() {}
-    public func detect(in directory: URL) throws {
-        let help = try commands.run("/usr/bin/env", ["codex", "--ask-for-approval", "never", "exec", "--help"], cwd: directory, timeout: 10)
-        guard help.status == 0, help.output.contains("--sandbox"), help.output.contains("--cd"), help.output.contains("--output-last-message") else {
-            throw BSAError.message("Install a Codex CLI supporting 'codex exec --sandbox workspace-write --cd'. Authenticate with 'codex login'.")
-        }
-    }
-    public func run(prompt: String, cwd: URL, timeout: TimeInterval) throws -> CommandResult {
-        let message = FileManager.default.temporaryDirectory.appendingPathComponent("bsa-codex-" + UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: message) }
-        let result = try commands.run("/usr/bin/env", ["codex", "--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--cd", cwd.path,
-            "--output-last-message", message.path, prompt], cwd: cwd, timeout: timeout)
-        let final = (try? String(contentsOf: message, encoding: .utf8)) ?? result.output
-        return CommandResult(status: result.status, output: final, timedOut: result.timedOut)
-    }
-}
-
 struct Planner {
     static func prompt(history: String) -> String {
         """
@@ -51,7 +31,17 @@ struct Planner {
 struct CommandAdapter: HarnessAdapter {
     public let name: String
     let arguments: [String]
-    public init(name: String, arguments: [String]) { self.name = name; self.arguments = arguments }
+    let helpArguments: [String]?
+    let requiredFlags: [String]?
+    let capturesFinalMessage: Bool
+    public init(name: String, arguments: [String], helpArguments: [String]? = nil,
+                requiredFlags: [String]? = nil, capturesFinalMessage: Bool = false) {
+        self.name = name
+        self.arguments = arguments
+        self.helpArguments = helpArguments
+        self.requiredFlags = requiredFlags
+        self.capturesFinalMessage = capturesFinalMessage
+    }
     public func detect(in directory: URL) throws {
         if name == "custom" {
             let executable = arguments[0]
@@ -63,24 +53,38 @@ struct CommandAdapter: HarnessAdapter {
             }
             return
         }
-        let probe = name == "opencode" ? [name, "run", "--help"] : [name, "--help"]
+        let probe = helpArguments ?? [name, "--help"]
         let result = try CommandRunner().run("/usr/bin/env", probe, cwd: directory, timeout: 10)
-        let flags = arguments.dropFirst().filter { $0.hasPrefix("--") }
+        let flags = requiredFlags ?? arguments.dropFirst().filter { $0.hasPrefix("--") }
         guard result.status == 0, flags.allSatisfy(result.output.contains) else {
             throw BSAError.message("Install a compatible \(name) CLI supporting \(arguments.dropFirst().joined(separator: " "))")
         }
     }
     public func run(prompt: String, cwd: URL, timeout: TimeInterval) throws -> CommandResult {
-        let expanded = arguments.map { $0.components(separatedBy: "{prompt}").map { $0.replacingOccurrences(of: "{cwd}", with: cwd.path) }.joined(separator: prompt) }
-        return try CommandRunner().run("/usr/bin/env", expanded, cwd: cwd, timeout: timeout)
+        let message = capturesFinalMessage ? FileManager.default.temporaryDirectory
+            .appendingPathComponent("bsa-" + name + "-" + UUID().uuidString) : nil
+        defer { if let message { try? FileManager.default.removeItem(at: message) } }
+        let expanded = arguments.map { argument in
+            argument.components(separatedBy: "{prompt}").map { part in
+                let value = part.replacingOccurrences(of: "{cwd}", with: cwd.path)
+                return message.map { value.replacingOccurrences(of: "{output}", with: $0.path) } ?? value
+            }.joined(separator: prompt)
+        }
+        let result = try CommandRunner().run("/usr/bin/env", expanded, cwd: cwd, timeout: timeout)
+        guard let message, let final = try? String(contentsOf: message, encoding: .utf8) else { return result }
+        return CommandResult(status: result.status, output: final, timedOut: result.timedOut)
     }
 }
 
 public enum Harnesses {
-    public static var builtins: [any HarnessAdapter] { [CodexAdapter(),
+    public static var builtins: [any HarnessAdapter] { [
+            CommandAdapter(name: "codex", arguments: ["codex", "--ask-for-approval", "never", "exec",
+                "--sandbox", "workspace-write", "--cd", "{cwd}", "--output-last-message", "{output}", "{prompt}"],
+                helpArguments: ["codex", "--ask-for-approval", "never", "exec", "--help"],
+                requiredFlags: ["--sandbox", "--cd", "--output-last-message"], capturesFinalMessage: true),
             CommandAdapter(name: "claude", arguments: ["claude", "--print", "--permission-mode", "acceptEdits", "{prompt}"]),
             CommandAdapter(name: "pi", arguments: ["pi", "--print", "--no-session", "{prompt}"]),
-            CommandAdapter(name: "opencode", arguments: ["opencode", "run", "{prompt}"])]
+            CommandAdapter(name: "opencode", arguments: ["opencode", "run", "{prompt}"], helpArguments: ["opencode", "run", "--help"])]
     }
     public static func select(configuration: Configuration, directory: URL) throws -> any HarnessAdapter {
         let adapters = builtins
