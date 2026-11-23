@@ -9,12 +9,28 @@ Boy Scout Agent (`bsa`) asks an installed coding agent to find one worthwhile im
 Build with Swift 6 or later on macOS or Linux. Install Git and sign in to at least one supported coding agent CLI. BSA looks for Codex, Claude Code, Pi, then OpenCode, in that order.
 
 ```sh
-swift build -c release
-mkdir -p ~/.local/bin
-cp .build/release/bsa ~/.local/bin/bsa
+./Scripts/install.sh
 export PATH="$HOME/.local/bin:$PATH"
 bsa --version
 ```
+
+To install into a different directory, run `./Scripts/install.sh /path/to/bin`.
+The script builds a release executable and replaces any existing BSA installation
+only after a successful build.
+
+Update an installed BSA from any directory:
+
+```sh
+bsa update
+```
+
+This downloads the latest `main` source from `https://github.com/tadija/boy-scout-agent`,
+builds it with your local Swift toolchain, and replaces the executable you invoked
+(resolving symlinks). Git, Swift 6 or later, network access, and write access to the
+installation directory are required. This installs the current development branch,
+which may report the same version as your existing installation. A failed build
+leaves your installed executable intact. Local source checkouts are unaffected.
+You can also update your checkout and rerun `./Scripts/install.sh`.
 
 ## Run on any project
 

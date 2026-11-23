@@ -43,10 +43,11 @@ cp bsa.json "$fixture/defaults.json"
 if "$bsa" init > "$fixture/existing-init" 2>&1; then exit 1; fi
 cmp bsa.json "$fixture/defaults.json"
 if "$bsa" init extra > "$fixture/invalid-init" 2>&1; then exit 1; fi
-for command in init run config status history stop doctor harnesses schedule; do
+for command in init update run config status history stop doctor harnesses schedule; do
   "$bsa" "$command" --help > "$fixture/command-help"
   grep -q 'config show' "$fixture/command-help"
 done
+if "$bsa" update extra > "$fixture/invalid-update" 2>&1; then exit 1; fi
 "$bsa" schedule add --help > "$fixture/schedule-help"
 "$bsa" config show --help > "$fixture/config-help"
 git init -q -b main

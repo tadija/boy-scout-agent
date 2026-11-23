@@ -15,6 +15,7 @@ Usage: bsa <command> [options]
 
 Commands:
   init             Create bsa.json with all built-in defaults in the current directory
+  update           Download main from GitHub, build, and replace this executable
   run              Run isolated improvement iterations
   config show      Print effective configuration (global + repository settings)
   status           Show the latest session and active phase
@@ -54,7 +55,7 @@ State: $XDG_DATA_HOME/bsa (default ~/.local/share/bsa).
 Cancellation.install()
 do {
     let args = Array(CommandLine.arguments.dropFirst())
-    let commands = ["init", "run", "config", "status", "history", "stop", "doctor", "harnesses", "schedule"]
+    let commands = ["update", "init", "run", "config", "status", "history", "stop", "doctor", "harnesses", "schedule"]
     let commandHelp = args.last == "--help" && (
         (args.count == 2 && commands.contains(args[0])) ||
         (args.count == 3 && (args[0] == "config" && args[1] == "show" ||
@@ -68,6 +69,12 @@ do {
         let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let runner = Runner()
         switch args[0] {
+        case "update":
+            guard args.count == 1 else { throw BSAError.message("update takes no options") }
+            guard let executable = Bundle.main.executableURL else {
+                throw BSAError.message("Cannot resolve BSA executable path")
+            }
+            try Updater().update(executable: executable) { print($0) }
         case "init":
             guard args.count == 1 else { throw BSAError.message("init takes no options") }
             let destination = directory.appendingPathComponent("bsa.json")
