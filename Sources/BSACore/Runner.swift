@@ -9,6 +9,21 @@ public final class Runner {
     private let commands = CommandRunner()
     public init() {}
 
+    public func prompt(at directory: URL, configuration: Configuration? = nil, dataDirectory: URL? = nil) throws -> String {
+        let repo = try Repository(at: directory)
+        let config = try configuration ?? Configuration.load(repository: repo)
+        let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
+        let recent = try store.recent(branch: targetBranch(configuration: config, repository: repo))
+        return Planner.prompt(instructions: config.instructions, recent: recent)
+    }
+
+    private func targetBranch(configuration: Configuration, repository: Repository) -> String {
+        let slug = repository.root.lastPathComponent.lowercased().map {
+            $0.isASCII && ($0.isLetter || $0.isNumber) ? String($0) : "-"
+        }.joined()
+        return configuration.branch ?? "bsa/\(slug)"
+    }
+
     public func status(at directory: URL, dataDirectory: URL? = nil) throws -> Record? {
         try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory).latest
     }
@@ -95,8 +110,7 @@ public final class Runner {
             try store.save(recovered)
         }
         let base = try repo.git(["rev-parse", "--verify", "--end-of-options", (config.base ?? "HEAD") + "^{commit}"])
-        let slug = repo.root.lastPathComponent.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? String($0) : "-" }.joined()
-        let branch = config.branch ?? "bsa/\(slug)"
+        let branch = targetBranch(configuration: config, repository: repo)
         _ = try repo.git(["check-ref-format", "--branch", branch])
         let recent = try store.recent(branch: branch)
         let target = "refs/heads/" + branch
@@ -215,9 +229,7 @@ public final class Runner {
             try beginPhase("Harness")
             let response: CommandResult
             do {
-                response = try harness.run(prompt: Planner.prompt(history: config.instructions + "\nExplore neglected areas; avoid repeating unchanged failed tasks. Recent paths: " + recent.flatMap(\.paths).prefix(30).joined(separator: ", ") + "\n" + recent.map {
-                    "Outcome: \($0.outcome). Task: \(($0.task ?? "none").prefix(400)). Detail: \(($0.detail ?? "none").prefix(200))"
-                }.joined(separator: "\n")), cwd: worktree, timeout: remaining())
+                response = try harness.run(prompt: Planner.prompt(instructions: config.instructions, recent: recent), cwd: worktree, timeout: remaining())
             } catch {
                 record.outcome = Cancellation.shouldStop ? "cancelled" : "harness_failed"
                 throw error

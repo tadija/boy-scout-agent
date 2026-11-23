@@ -6,7 +6,7 @@ Boy Scout Agent (`bsa`) asks an installed coding agent to find one worthwhile im
 
 ## Install
 
-Build with Swift 6 or later on macOS or Linux. Install Git and sign in to at least one supported coding agent CLI. BSA looks for Codex, Claude Code, Pi, then OpenCode, in that order.
+Build with Swift 6 or later on macOS or Linux. Install Git and sign in to at least one supported coding agent CLI. BSA looks for Codex, Claude Code, Pi, OpenCode, Gemini.
 
 ```sh
 ./Scripts/install.sh
@@ -70,6 +70,7 @@ For a longer run, set an iteration limit and optionally choose the agent.
 ```sh
 bsa run --count 10 --harness claude
 bsa run --harness claude --yolo
+bsa run --harness gemini --yolo
 bsa run --instructions "Focus on error handling; preserve public APIs."
 bsa run --count 5 --harness codex --branch bsa/polish
 bsa run --count 100 --duration 4h

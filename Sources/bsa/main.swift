@@ -29,13 +29,16 @@ Run options:
   --count N                         Maximum iterations (default: 1)
   --duration DURATION | --until HH:MM
                                     Execution window, e.g. 4h; or local stop time
-  --harness NAME                    codex, claude, pi, opencode, or custom
+  --harness NAME                    codex, claude, pi, opencode, gemini, or custom
   --branch NAME --base REV           Target branch and starting revision
   --force                           Adopt an existing target branch from its tip
   --identity VALUE                  \"Name <email>\" or git for configured Git identity
   --instructions TEXT               Override configured project guidance
   --skip-checks                     Skip both baseline and verification commands
   --yolo                            Enable the built-in harness's permissive mode
+
+Config options:
+  --prompt                          Print the full prompt with instructions and recent history
 
 Schedule subcommands:
   add --at HH:MM --duration DURATION
@@ -44,7 +47,7 @@ Schedule subcommands:
   remove ID                         Remove schedule files; unload native timers first
 
 Options override configuration. Built-in commit identity: Boy Scout Agent <boy-scout-agent@localhost>.
-Runs use Codex, Claude Code, Pi, or OpenCode in discovery order unless configured.
+Runs use Codex, Claude Code, Pi, OpenCode, or Gemini in discovery order unless configured.
 Swift packages use swift test automatically; other projects need verification commands
 in bsa.json (or explicit [] to skip them). Push requires explicit configuration.
 
@@ -177,7 +180,13 @@ do {
             try runner.stop(at: directory)
             print("Cancellation requested.")
         case "config":
-            guard args.count == 1 else { throw BSAError.message("config takes no options") }
+            guard args == ["config"] || args == ["config", "--prompt"] else {
+                throw BSAError.message("Use config or config --prompt")
+            }
+            if args == ["config", "--prompt"] {
+                print(try runner.prompt(at: directory))
+                break
+            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             print(String(decoding: try encoder.encode(Configuration.load(repository: Repository(at: directory))), as: UTF8.self))

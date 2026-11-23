@@ -59,6 +59,11 @@ printf 'before\n' > value.txt
 printf '{"verification":["test -s value.txt"],"instructions":"CONFIG_INSTRUCTIONS_MUST_BE_OVERRIDDEN"}\n' > bsa.json
 git add .
 git commit -qm Initial
+"$bsa" config > "$fixture/config-instructions"
+grep -q 'CONFIG_INSTRUCTIONS_MUST_BE_OVERRIDDEN' "$fixture/config-instructions"
+"$bsa" config --prompt > "$fixture/prompt-preview"
+grep -q 'Make exactly one bounded' "$fixture/prompt-preview"
+grep -q 'CONFIG_INSTRUCTIONS_MUST_BE_OVERRIDDEN' "$fixture/prompt-preview"
 cp bsa.json "$fixture/project-config.json"
 cp "$fixture/defaults.json" bsa.json
 "$bsa" config > "$fixture/initial-config"
@@ -95,9 +100,15 @@ grep -q 'Outcome: committed' "$fixture/status"
 grep -q 'Stopped after 2 consecutive attempts without a candidate' "$fixture/empty"
 [ "$(grep -c 'no_candidate on' "$fixture/empty")" = 2 ]
 [ "$(git rev-list --all --count)" = 2 ]
-for harness in claude pi opencode custom; do
+for harness in claude pi opencode gemini custom; do
   cat > "$fixture/bin/$harness" <<'HARNESS'
 #!/bin/sh
+if [ "${0##*/}" = gemini ]; then
+  case "$*" in *--help*)
+    if [ "${BSA_TEST_GEMINI_OLD:-0}" = 1 ]; then echo '--prompt'; else echo '--prompt --approval-mode auto_edit yolo'; fi
+    exit 0;;
+  esac
+fi
 case "$*" in *--help*) echo '--print --permission-mode --no-session --dangerously-skip-permissions --approve --auto'; exit 0;; esac
 case "${0##*/}" in
   claude)
@@ -112,6 +123,12 @@ case "${0##*/}" in
   opencode)
     [ "$1" = run ] && shift || exit 2
     if [ "${BSA_TEST_YOLO:-0}" = 1 ]; then [ "$1" = --auto ] && shift || exit 2; fi;;
+  gemini)
+    [ "$1" = --approval-mode ] || exit 2
+    if [ "${BSA_TEST_YOLO:-0}" = 1 ]; then [ "$2" = yolo ] || exit 2
+    else [ "$2" = auto_edit ] || exit 2; fi
+    [ "$3" = --prompt ] && shift 3 || exit 2
+    [ -f value.txt ] || exit 2;;
   custom) [ "$(cd "$1" && pwd -P)" = "$(pwd -P)" ] && shift || exit 2;;
 esac
 case "$1" in *'Make exactly one bounded'*) exit 0;; *) exit 2;; esac
@@ -129,6 +146,10 @@ HARNESS
     grep -q 'only supports built-in harnesses' "$fixture/custom-yolo"
   fi
 done
+if BSA_TEST_GEMINI_OLD=1 "$bsa" run --harness gemini --yolo > "$fixture/old-gemini" 2>&1; then exit 1; fi
+grep -q 'Install a compatible gemini CLI' "$fixture/old-gemini"
+"$bsa" harnesses > "$fixture/harnesses"
+grep -q 'gemini: available' "$fixture/harnesses"
 BSA_TEST_YOLO=1 "$bsa" run --harness codex --yolo > "$fixture/codex-yolo"
 grep -q 'no_candidate on' "$fixture/codex-yolo"
 "$bsa" history > "$fixture/history"

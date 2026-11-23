@@ -7,6 +7,12 @@ public protocol HarnessAdapter {
 }
 
 struct Planner {
+    static func prompt(instructions: String, recent: [Record]) -> String {
+        prompt(history: instructions + "\nExplore neglected areas; avoid repeating unchanged failed tasks. Recent paths: " + recent.flatMap(\.paths).prefix(30).joined(separator: ", ") + "\n" + recent.map {
+            "Outcome: \($0.outcome). Task: \(($0.task ?? "none").prefix(400)). Detail: \(($0.detail ?? "none").prefix(200))"
+        }.joined(separator: "\n"))
+    }
+
     static func prompt(history: String) -> String {
         """
         Make exactly one bounded, worthwhile improvement in this checkout.
@@ -92,7 +98,9 @@ public enum Harnesses {
             CommandAdapter(name: "pi", arguments: ["pi", "--print", "--no-session"] +
                 (yolo ? ["--approve"] : []) + ["{prompt}"]),
             CommandAdapter(name: "opencode", arguments: ["opencode", "run"] +
-                (yolo ? ["--auto"] : []) + ["{prompt}"], helpArguments: ["opencode", "run", "--help"])]
+                (yolo ? ["--auto"] : []) + ["{prompt}"], helpArguments: ["opencode", "run", "--help"]),
+            CommandAdapter(name: "gemini", arguments: ["gemini", "--approval-mode", yolo ? "yolo" : "auto_edit", "--prompt", "{prompt}"],
+                requiredFlags: ["--approval-mode", "--prompt", yolo ? "yolo" : "auto_edit"])]
     }
     public static func select(configuration: Configuration, directory: URL, yolo: Bool = false) throws -> any HarnessAdapter {
         let adapters = builtins(yolo: yolo)
@@ -106,6 +114,6 @@ public enum Harnesses {
             return adapter
         }
         for adapter in adapters { if (try? adapter.detect(in: directory)) != nil { return adapter } }
-        throw BSAError.message("Install Codex, Claude Code, Pi or OpenCode, or configure a custom harness")
+        throw BSAError.message("Install Codex, Claude Code, Pi, OpenCode or Gemini, or configure a custom harness")
     }
 }

@@ -15,7 +15,7 @@ The goal is sustained, measurable codebase quality improvement, not maximizing c
 ### Included
 - Swift CLI for macOS and Linux, with minimal dependencies.
 - Local Git repositories; no Git hosting API requirement.
-- Built-in harness adapters for Codex, Claude Code, Pi, and OpenCode where a supported noninteractive CLI is available, plus configurable custom command adapter.
+- Built-in harness adapters for Codex, Claude Code, Pi, OpenCode, and Gemini where a supported noninteractive CLI is available, plus configurable custom command adapter.
 - One-shot runs, iteration counts, bounded time windows, and recurring local schedules.
 - Git worktree isolation and dedicated BSA branches by default.
 - Customizable improvement rules and verification commands.
@@ -105,7 +105,7 @@ Define a `HarnessAdapter` interface supporting:
 - `run(prompt, cwd, timeout, environment, logSink)` returning normalized exit status, output, and optional token/cost metadata.
 - `cancel()` with graceful termination followed by forced termination after a bounded delay.
 
-Implement Codex, Claude Code, Pi, and OpenCode adapters based on their documented installed CLI interfaces; detect incompatible versions and fail with actionable messages. Do not assume flags are interchangeable or invent unsupported machine-readable modes. Support custom harnesses via an executable and argument array with explicit placeholders for prompt and working directory, avoiding shell interpolation by default.
+Implement Codex, Claude Code, Pi, OpenCode, and Gemini adapters based on their documented installed CLI interfaces; detect incompatible versions and fail with actionable messages. Do not assume flags are interchangeable or invent unsupported machine-readable modes. Support custom harnesses via an executable and argument array with explicit placeholders for prompt and working directory, avoiding shell interpolation by default.
 
 Each adapter must enforce noninteractive behavior, prevent agent-created commits/pushes, and constrain file operations as far as the harness supports. BSA's Git and verification guards remain authoritative. Do not claim a harness is sandboxed merely because it runs in a worktree: worktrees isolate Git state, not filesystem/network access. Document that unattended harnesses may execute code and require appropriate OS-level sandboxing or trusted environments.
 
@@ -271,7 +271,7 @@ Implement **Stage 2 — Autonomy & Intelligence** of Boy Scout Agent (BSA), usin
 
 - Implement `bsa run --count N` for repeated independent iterations.
 - Start each iteration with fresh harness context, while preserving useful run history.
-- Add built-in adapters for Claude Code, Pi, and OpenCode alongside Codex.
+- Add built-in adapters for Claude Code, Pi, OpenCode, and Gemini alongside Codex.
 - Support configurable custom harness commands.
 - Implement harness selection by CLI flag and configuration.
 - Add default improvement priorities and Boy Scout rules.

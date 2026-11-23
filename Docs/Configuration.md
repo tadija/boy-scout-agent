@@ -5,7 +5,15 @@ Run `bsa init` in the root of your checkout to generate an optional `bsa.json` w
 ```sh
 bsa init
 bsa config
+bsa config --prompt
 ```
+
+`bsa config` includes the configured `instructions` string. `bsa config --prompt`
+prints the full prompt that the next iteration would send, including BSA's built-in
+instructions, configured project guidance, and recent outcomes for the configured
+target branch. It does not invoke a harness. History changes after each iteration.
+Overrides passed to a previous `bsa run --instructions` are not saved; this preview
+uses the current global and repository configuration.
 
 Automatic settings (`base`, `branch`, `harness`, `customCommand`, `baseline`, and `verification`) are written as `null`. For baseline and verification, `null` has the same automatic behavior as omitting the property; `[]` explicitly skips commands. The generated file uses built-in defaults, independent of global settings, and its explicit values override global settings.
 
@@ -24,7 +32,7 @@ A minimal hand-written configuration also works:
 | `verification` | Ordered shell commands for the proposed change in a fresh checkout. Include any setup they need. Defaults to `swift test` for Swift packages; otherwise commands must be configured. Set `[]` to explicitly skip project verification. |
 | `protectedPaths` | Additional case-sensitive POSIX glob patterns against repository-relative paths. `*` can match slashes, e.g. `vendor/*`. Built-in protections always apply. |
 | `instructions` | Additional project preferences for the agent. Override for one run with `--instructions "..."`. |
-| `harness` | Automatic discovery, or choose `codex`, `claude`, `pi`, `opencode`, or `custom`. |
+| `harness` | Automatic discovery, or choose `codex`, `claude`, `pi`, `opencode`, `gemini`, or `custom`. |
 | `customCommand` | For a custom harness, give the executable and arguments as an array, e.g. `["my-agent", "{prompt}"]`. Use `{cwd}` for the worktree path. Arguments are passed directly. |
 | `commitIdentity` | Author and committer for BSA commits. Default: `Boy Scout Agent <boy-scout-agent@localhost>`. Set `git` to use the configured Git identity, or supply `Name <email>`. Override with `--identity`. |
 | `base`, `branch` | Starting revision and local target branch. Defaults are HEAD and `bsa/<project>`. |
@@ -38,7 +46,7 @@ flags override repository settings. `push: true` explicitly enables non-forced
 pushes to `origin` after accepted commits. A failed push retains the local commit
 and stops the run.
 
-[Example configuration](../Examples/bsa.json)
+[Example configuration](Examples/bsa.json)
 
 ## Permissive harness mode
 
@@ -54,10 +62,17 @@ bsa run --harness claude --yolo
 | Claude Code | `--dangerously-skip-permissions` instead of `--permission-mode acceptEdits` | Bypasses Claude permission checks. |
 | Pi | Adds `--approve` | Trusts project-local resources for this invocation. Pi already runs tools without per-call approvals. |
 | OpenCode | Adds `--auto` | Auto-approves permissions that are not explicitly denied. Explicit denials still apply. |
+| Gemini | `--approval-mode yolo` instead of `--approval-mode auto_edit` | Auto-approves all tool calls instead of just edit tools. |
 
 The mappings are checked against each installed CLI's help output before execution. Older versions missing these flags are rejected. Custom harnesses must configure their own arguments in `customCommand`; combining them with `--yolo` is rejected.
 
 This affects the agent process's execution permissions, not BSA's Git guards, verification commands, or publishing rules. Codex's sandbox is disabled in this mode; a Git worktree does not restrict filesystem or network access. Normal arguments remain the default when the flag is absent. See [Pi's security model](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/security.md) for the distinction between project trust and tool permissions. Other mappings were verified with the installed `codex exec --help`, `claude --help`, and `opencode run --help`.
+
+Gemini runs headlessly with `--prompt` from the BSA worktree. Normal mode uses
+`auto_edit`; tools that require additional approval may be denied in headless mode.
+Use `bsa run --harness gemini --yolo` for Gemini's permissive mode. These arguments
+were checked against the installed `gemini --help` and the official
+[Gemini reference](https://geminicli.com/docs/cli/cli-reference/).
 
 ## Instructions from the CLI
 
