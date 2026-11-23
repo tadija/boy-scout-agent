@@ -77,18 +77,27 @@ struct CommandAdapter: HarnessAdapter {
 }
 
 public enum Harnesses {
-    public static var builtins: [any HarnessAdapter] { [
-            CommandAdapter(name: "codex", arguments: ["codex", "--ask-for-approval", "never", "exec",
-                "--sandbox", "workspace-write", "--cd", "{cwd}", "--output-last-message", "{output}", "{prompt}"],
+    public static var builtins: [any HarnessAdapter] { builtins(yolo: false) }
+
+    public static func builtins(yolo: Bool) -> [any HarnessAdapter] {
+        let codex = yolo ? ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox"] :
+            ["codex", "--ask-for-approval", "never", "exec", "--sandbox", "workspace-write"]
+        let codexFlags = yolo ? ["--dangerously-bypass-approvals-and-sandbox"] : ["--sandbox"]
+        return [
+            CommandAdapter(name: "codex", arguments: codex + ["--cd", "{cwd}", "--output-last-message", "{output}", "{prompt}"],
                 helpArguments: ["codex", "--ask-for-approval", "never", "exec", "--help"],
-                requiredFlags: ["--sandbox", "--cd", "--output-last-message"], capturesFinalMessage: true),
-            CommandAdapter(name: "claude", arguments: ["claude", "--print", "--permission-mode", "acceptEdits", "{prompt}"]),
-            CommandAdapter(name: "pi", arguments: ["pi", "--print", "--no-session", "{prompt}"]),
-            CommandAdapter(name: "opencode", arguments: ["opencode", "run", "{prompt}"], helpArguments: ["opencode", "run", "--help"])]
+                requiredFlags: codexFlags + ["--cd", "--output-last-message"], capturesFinalMessage: true),
+            CommandAdapter(name: "claude", arguments: ["claude", "--print"] +
+                (yolo ? ["--dangerously-skip-permissions"] : ["--permission-mode", "acceptEdits"]) + ["{prompt}"]),
+            CommandAdapter(name: "pi", arguments: ["pi", "--print", "--no-session"] +
+                (yolo ? ["--approve"] : []) + ["{prompt}"]),
+            CommandAdapter(name: "opencode", arguments: ["opencode", "run"] +
+                (yolo ? ["--auto"] : []) + ["{prompt}"], helpArguments: ["opencode", "run", "--help"])]
     }
-    public static func select(configuration: Configuration, directory: URL) throws -> any HarnessAdapter {
-        let adapters = builtins
+    public static func select(configuration: Configuration, directory: URL, yolo: Bool = false) throws -> any HarnessAdapter {
+        let adapters = builtins(yolo: yolo)
         if configuration.harness == "custom" {
+            guard !yolo else { throw BSAError.message("--yolo only supports built-in harnesses; configure customCommand explicitly for a custom harness") }
             guard let command = configuration.customCommand, let executable = command.first, !executable.isEmpty, !executable.hasPrefix("-"), !executable.contains("="), (executable.hasPrefix("/") || !executable.contains("/")), command.dropFirst().contains(where: { $0.contains("{prompt}") }) else { throw BSAError.message("customCommand requires an executable and {prompt} argument") }
             return CommandAdapter(name: "custom", arguments: command)
         }

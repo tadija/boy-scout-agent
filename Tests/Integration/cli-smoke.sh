@@ -7,15 +7,29 @@ trap 'rm -rf "$fixture"' EXIT HUP INT TERM
 mkdir -p "$fixture/bin" "$fixture/project"
 cat > "$fixture/bin/codex" <<'CODEX'
 #!/bin/sh
-[ "$1" = --ask-for-approval ] && [ "$2" = never ] || exit 2
-shift 2
+if [ "$1" = --ask-for-approval ]; then
+  [ "$2" = never ] || exit 2
+  shift 2
+fi
 if [ "$2" = --help ]; then
-  echo '--sandbox --cd --output-last-message'
+  echo '--sandbox --cd --output-last-message --dangerously-bypass-approvals-and-sandbox'
   exit 0
 fi
-if [ -n "${BSA_TEST_PROMPT:-}" ]; then printf '%s\n' "$8" > "$BSA_TEST_PROMPT"; fi
+[ "$1" = exec ] || exit 2
+shift
+if [ "${BSA_TEST_YOLO:-0}" = 1 ]; then
+  [ "$1" = --dangerously-bypass-approvals-and-sandbox ] || exit 2
+  shift
+else
+  [ "$1 $2" = '--sandbox workspace-write' ] || exit 2
+  shift 2
+fi
+[ "$1" = --cd ] && [ "$2" -ef . ] || exit 2
+shift 2
+[ "$1" = --output-last-message ] || exit 2
+if [ -n "${BSA_TEST_PROMPT:-}" ]; then printf '%s\n' "$3" > "$BSA_TEST_PROMPT"; fi
 printf 'after\n' > value.txt
-printf 'Correct the value fixture\n' > "$7"
+printf 'Correct the value fixture\n' > "$2"
 CODEX
 chmod +x "$fixture/bin/codex"
 export PATH="$fixture/bin:$PATH"
@@ -65,11 +79,20 @@ grep -q 'Stopped after 2 consecutive attempts without a candidate' "$fixture/emp
 for harness in claude pi opencode custom; do
   cat > "$fixture/bin/$harness" <<'HARNESS'
 #!/bin/sh
-case "$*" in *--help*) echo '--print --permission-mode --no-session'; exit 0;; esac
+case "$*" in *--help*) echo '--print --permission-mode --no-session --dangerously-skip-permissions --approve --auto'; exit 0;; esac
 case "${0##*/}" in
-  claude) [ "$1 $2 $3" = '--print --permission-mode acceptEdits' ] && shift 3 || exit 2;;
-  pi) [ "$1 $2" = '--print --no-session' ] && shift 2 || exit 2;;
-  opencode) [ "$1" = run ] && shift || exit 2;;
+  claude)
+    if [ "${BSA_TEST_YOLO:-0}" = 1 ]; then
+      [ "$1 $2" = '--print --dangerously-skip-permissions' ] && shift 2 || exit 2
+    else
+      [ "$1 $2 $3" = '--print --permission-mode acceptEdits' ] && shift 3 || exit 2
+    fi;;
+  pi)
+    [ "$1 $2" = '--print --no-session' ] && shift 2 || exit 2
+    if [ "${BSA_TEST_YOLO:-0}" = 1 ]; then [ "$1" = --approve ] && shift || exit 2; fi;;
+  opencode)
+    [ "$1" = run ] && shift || exit 2
+    if [ "${BSA_TEST_YOLO:-0}" = 1 ]; then [ "$1" = --auto ] && shift || exit 2; fi;;
   custom) [ "$(cd "$1" && pwd -P)" = "$(pwd -P)" ] && shift || exit 2;;
 esac
 case "$1" in *'Make exactly one bounded'*) exit 0;; *) exit 2;; esac
@@ -78,7 +101,17 @@ HARNESS
   printf '%s\n' '{"customCommand":["custom","{cwd}","{prompt}"],"verification":["test -s value.txt"]}' > bsa.json
   "$bsa" run --harness "$harness" > "$fixture/$harness.out"
   grep -q 'no_candidate on' "$fixture/$harness.out"
+  if [ "$harness" != custom ]; then
+    BSA_TEST_YOLO=1 "$bsa" run --harness "$harness" --yolo > "$fixture/$harness-yolo.out"
+    grep -q 'YOLO mode enabled' "$fixture/$harness-yolo.out"
+    grep -q 'no_candidate on' "$fixture/$harness-yolo.out"
+  else
+    if "$bsa" run --harness custom --yolo > "$fixture/custom-yolo" 2>&1; then exit 1; fi
+    grep -q 'only supports built-in harnesses' "$fixture/custom-yolo"
+  fi
 done
+BSA_TEST_YOLO=1 "$bsa" run --harness codex --yolo > "$fixture/codex-yolo"
+grep -q 'no_candidate on' "$fixture/codex-yolo"
 "$bsa" history > "$fixture/history"
 grep -q committed "$fixture/history"
 "$bsa" config show > "$fixture/config"

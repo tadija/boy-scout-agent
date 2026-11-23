@@ -31,6 +31,25 @@ and stops the run.
 
 [Example configuration](../Examples/bsa.json)
 
+## Permissive harness mode
+
+```sh
+bsa run --harness claude --yolo
+```
+
+`--yolo` is a per-run CLI flag. It selects the built-in agent's supported permissive arguments:
+
+| Harness | Arguments used in YOLO mode | Effect |
+| --- | --- | --- |
+| Codex | `--dangerously-bypass-approvals-and-sandbox` instead of `--ask-for-approval never` and `--sandbox workspace-write` | Disables Codex approval prompts and sandboxing. |
+| Claude Code | `--dangerously-skip-permissions` instead of `--permission-mode acceptEdits` | Bypasses Claude permission checks. |
+| Pi | Adds `--approve` | Trusts project-local resources for this invocation. Pi already runs tools without per-call approvals. |
+| OpenCode | Adds `--auto` | Auto-approves permissions that are not explicitly denied. Explicit denials still apply. |
+
+The mappings are checked against each installed CLI's help output before execution. Older versions missing these flags are rejected. Custom harnesses must configure their own arguments in `customCommand`; combining them with `--yolo` is rejected.
+
+This affects the agent process's execution permissions, not BSA's Git guards, verification commands, or publishing rules. Codex's sandbox is disabled in this mode; a Git worktree does not restrict filesystem or network access. Normal arguments remain the default when the flag is absent. See [Pi's security model](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/security.md) for the distinction between project trust and tool permissions. Other mappings were verified with the installed `codex exec --help`, `claude --help`, and `opencode run --help`.
+
 ## Instructions from the CLI
 
 ```sh

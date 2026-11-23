@@ -11,7 +11,7 @@ let version = "0.1.1"
 let help = """
 Boy Scout Agent — one run, one improvement, one commit.
 
-Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV] [--force] [--identity VALUE] [--instructions TEXT]
+Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV] [--force] [--identity VALUE] [--instructions TEXT] [--yolo]
        bsa schedule add --at HH:MM --duration 4h | list | remove ID
        bsa stop | history | doctor | harnesses | config show
        bsa status
@@ -23,6 +23,7 @@ other projects need verification commands in bsa.json (or explicit [] to skip th
 --force adopts an existing target branch and continues from its tip, even if it diverged from the base.
 --identity accepts "Name <email>" (default: Boy Scout Agent <boy-scout-agent@localhost>) or git for your configured Git identity.
 --instructions supplies project guidance for this run, overriding configured instructions.
+--yolo enables each built-in harness's permissive mode for this run; BSA Git and verification guards remain active.
 State: $XDG_DATA_HOME/bsa (default ~/.local/share/bsa).
 """
 
@@ -39,10 +40,16 @@ do {
         switch args[0] {
         case "run":
             var configuration = try Configuration.load(repository: Repository(at: directory))
+            var yolo = false
             var force = false
             var deadline: Date?
             var index = 1
             while index < args.count {
+                if args[index] == "--yolo" {
+                    yolo = true
+                    index += 1
+                    continue
+                }
                 if args[index] == "--force" {
                     force = true
                     index += 1
@@ -68,7 +75,8 @@ do {
                 }
                 index += 2
             }
-            let harness = try Harnesses.select(configuration: configuration, directory: directory)
+            let harness = try Harnesses.select(configuration: configuration, directory: directory, yolo: yolo)
+            if yolo { print("YOLO mode enabled for \(harness.name).") }
             print("Harness: \(harness.name). Up to \(configuration.maxIterations) isolated iterations…")
             let records = try runner.runSession(at: directory, configuration: configuration, harness: harness, deadline: deadline, force: force, onProgress: { message in
                 FileHandle.standardError.write(Data((message + "\n").utf8))

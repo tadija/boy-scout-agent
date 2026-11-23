@@ -53,10 +53,13 @@ For a longer run, set an iteration limit and optionally choose the agent.
 
 ```sh
 bsa run --count 10 --harness claude
+bsa run --harness claude --yolo
 bsa run --instructions "Focus on error handling; preserve public APIs."
 bsa run --count 5 --harness codex --branch bsa/polish
 bsa run --count 100 --duration 4h
 ```
+
+`--yolo` selects the harness's permissive execution mode. See [harness permissions](Docs/Configuration.md#permissive-harness-mode) for each agent's behavior; BSA's Git and verification guards still apply.
 
 BSA reports the current phase on stderr and prints total and per-phase timings after each iteration. `bsa status` also shows the active phase. Timings include baseline checks, harness work, and independent verification; by default, checks run twice, and fresh worktrees may require fresh builds. Configure `baseline` and `verification` separately, or set either to `[]` to skip its commands.
 
