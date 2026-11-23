@@ -2,11 +2,11 @@
 
 > "Leave your codebase a little better than you found it."  
 
-Boy Scout Agent (`bsa`) asks an installed coding agent to find one worthwhile improvement, checks its work, and gives you a local Git commit to review. You can run it once or give it a few more turns.
+Boy Scout Agent (`bsa`) asks a coding agent to find one worthwhile improvement, checks its work, and gives you a local Git commit to review. You can run it once or give it a few more turns.
 
 ## Install
 
-Build with Swift 6 or later on macOS or Linux. Install Git and sign in to at least one supported coding agent CLI. BSA looks for Codex, Claude Code, Pi, OpenCode, Gemini.
+Build with Swift 6 or later on macOS or Linux. Install Git and, for external harnesses, install and sign in to your chosen coding agent CLI. BSA looks for Codex, Claude Code, Pi, OpenCode, Gemini. It also includes a standalone [Ollama agent](Docs/Configuration.md#ollama) for inference through your Ollama server; no external agent CLI is needed for Ollama.
 
 ```sh
 ./Scripts/install.sh
@@ -71,6 +71,7 @@ For a longer run, set an iteration limit and optionally choose the agent.
 bsa run --count 10 --harness claude
 bsa run --harness claude --yolo
 bsa run --harness gemini --yolo
+bsa run --harness ollama --ollama-host http://192.168.1.50:11434 --ollama-model my-coding-model
 bsa run --instructions "Focus on error handling; preserve public APIs."
 bsa run --count 5 --harness codex --branch bsa/polish
 bsa run --count 100 --duration 4h

@@ -4,6 +4,10 @@ public struct Configuration: Codable {
     public var commitIdentity: String = "Boy Scout Agent <boy-scout-agent@localhost>"
     public var push: Bool = false
     public var harness: String?
+    public var ollamaModel: String?
+    public var ollamaHost: String = "http://127.0.0.1:11434"
+    public var ollamaMaxTurns: Int = 40
+    public var ollamaContextLength: Int = 32768
     public var customCommand: [String]?
     public var protectedPaths: [String] = []
     public var instructions: String = ""
@@ -23,6 +27,10 @@ public struct Configuration: Codable {
         try container.encode(commitIdentity, forKey: .commitIdentity)
         try container.encode(push, forKey: .push)
         try container.encode(harness, forKey: .harness)
+        try container.encode(ollamaModel, forKey: .ollamaModel)
+        try container.encode(ollamaHost, forKey: .ollamaHost)
+        try container.encode(ollamaMaxTurns, forKey: .ollamaMaxTurns)
+        try container.encode(ollamaContextLength, forKey: .ollamaContextLength)
         try container.encode(customCommand, forKey: .customCommand)
         try container.encode(protectedPaths, forKey: .protectedPaths)
         try container.encode(instructions, forKey: .instructions)
@@ -48,10 +56,10 @@ public struct Configuration: Codable {
             dictionary.merge(values) { _, new in new }
         }
         guard
-              Set(dictionary.keys).isSubset(of: ["commitIdentity", "branch", "base", "baseline", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "instructions", "maxIterations", "failureLimit", "saturationLimit", "push", "protectedPaths"]) else {
+              Set(dictionary.keys).isSubset(of: ["ollamaModel", "ollamaHost", "ollamaMaxTurns", "ollamaContextLength", "commitIdentity", "branch", "base", "baseline", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "instructions", "maxIterations", "failureLimit", "saturationLimit", "push", "protectedPaths"]) else {
             throw BSAError.message("bsa.json contains unknown keys or is not an object")
         }
-        let defaults: [String: Any] = ["commitIdentity": "Boy Scout Agent <boy-scout-agent@localhost>", "protectedPaths": [String](), "push": false, "timeoutSeconds": 1800, "maxChangedFiles": 12, "instructions": "", "maxIterations": 1, "failureLimit": 3, "saturationLimit": 2]
+        let defaults: [String: Any] = ["ollamaHost": Configuration().ollamaHost, "ollamaMaxTurns": Configuration().ollamaMaxTurns, "ollamaContextLength": Configuration().ollamaContextLength, "commitIdentity": "Boy Scout Agent <boy-scout-agent@localhost>", "protectedPaths": [String](), "push": false, "timeoutSeconds": 1800, "maxChangedFiles": 12, "instructions": "", "maxIterations": 1, "failureLimit": 3, "saturationLimit": 2]
         let merged = defaults.merging(dictionary) { _, new in new }
         let configuration = try JSONDecoder().decode(Configuration.self, from: JSONSerialization.data(withJSONObject: merged))
         try configuration.validate()
@@ -77,6 +85,14 @@ public struct Configuration: Codable {
 
     func validate() throws {
         _ = try commitEnvironment()
+        guard let host = URLComponents(string: ollamaHost), ["http", "https"].contains(host.scheme),
+              let hostname = host.host, !hostname.isEmpty, host.query == nil, host.fragment == nil,
+              host.user == nil, host.password == nil,
+              ollamaMaxTurns > 0, ollamaMaxTurns <= 200,
+              ollamaContextLength >= 4096, ollamaContextLength <= 1_048_576,
+              ollamaModel.map({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? true else {
+            throw BSAError.message("Invalid Ollama settings: use an HTTP(S) ollamaHost, a nonempty model, 1–200 turns, and 4096–1048576 context tokens")
+        }
         guard maxIterations > 0, failureLimit > 0, saturationLimit > 0,
               customCommand.map({ !$0.isEmpty && !$0[0].isEmpty }) ?? true,
               timeoutSeconds.isFinite, timeoutSeconds > 0, timeoutSeconds <= 86400,

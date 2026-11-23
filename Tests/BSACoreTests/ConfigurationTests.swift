@@ -5,14 +5,31 @@ final class ConfigurationTests: XCTestCase {
     func testDefaultEncodingIncludesAutomaticSettingsAsNull() throws {
         let data = try JSONEncoder().encode(Configuration())
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(object.count, 15)
-        for key in ["harness", "customCommand", "branch", "base", "baseline", "verification"] {
+        XCTAssertEqual(object.count, 19)
+        for key in ["ollamaModel", "harness", "customCommand", "branch", "base", "baseline", "verification"] {
             XCTAssertTrue(object[key] is NSNull, "Expected null default for \(key)")
         }
         let decoded = try JSONDecoder().decode(Configuration.self, from: data)
         try decoded.validate()
         XCTAssertEqual(decoded.maxIterations, 1)
         XCTAssertEqual(decoded.commitIdentity, Configuration().commitIdentity)
+    }
+
+    func testOllamaSettingsAcceptLANHostAndRejectInvalidValues() throws {
+        var configuration = Configuration()
+        configuration.ollamaHost = "http://192.168.1.50:11434"
+        configuration.ollamaModel = "local-model:latest"
+        XCTAssertNoThrow(try configuration.validate())
+        for host in ["localhost:11434", "file:///tmp/ollama", "http://", "http://user:secret@localhost:11434", "http://localhost:11434?model=x"] {
+            configuration.ollamaHost = host
+            XCTAssertThrowsError(try configuration.validate(), host)
+        }
+        configuration.ollamaHost = Configuration().ollamaHost
+        configuration.ollamaMaxTurns = 0
+        XCTAssertThrowsError(try configuration.validate())
+        configuration.ollamaMaxTurns = 40
+        configuration.ollamaContextLength = 0
+        XCTAssertThrowsError(try configuration.validate())
     }
 
     func testTimeoutValidationRequiresFinitePositiveValueWithinOneDay() throws {

@@ -6,7 +6,7 @@
 **CLI:** `bsa`  
 **Principle:** One run. One improvement. One commit. Repeat.
 
-BSA is a local-first, harness-agnostic continuous codebase improvement orchestrator. It repeatedly delegates one bounded, coherent improvement to an installed coding agent, verifies the result, and records one Git commit for each successful iteration. It is not a new coding model or agent harness.
+BSA is a local-first, harness-agnostic continuous codebase improvement orchestrator. It repeatedly delegates one bounded, coherent improvement to an installed coding agent or the built-in Ollama agent, verifies the result, and records one Git commit for each successful iteration.
 
 The goal is sustained, measurable codebase quality improvement, not maximizing commit count. A run may produce no commit. A project can reach a *saturated* state (no defensible improvement found under current rules and budget), but BSA must not claim objective perfection.
 
@@ -15,7 +15,7 @@ The goal is sustained, measurable codebase quality improvement, not maximizing c
 ### Included
 - Swift CLI for macOS and Linux, with minimal dependencies.
 - Local Git repositories; no Git hosting API requirement.
-- Built-in harness adapters for Codex, Claude Code, Pi, OpenCode, and Gemini where a supported noninteractive CLI is available, plus configurable custom command adapter.
+- Built-in harness adapters for Codex, Claude Code, Pi, OpenCode, and Gemini where a supported noninteractive CLI is available, plus a standalone Ollama tool-calling agent and configurable custom command adapter.
 - One-shot runs, iteration counts, bounded time windows, and recurring local schedules.
 - Git worktree isolation and dedicated BSA branches by default.
 - Customizable improvement rules and verification commands.

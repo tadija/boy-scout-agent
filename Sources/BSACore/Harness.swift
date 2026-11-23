@@ -85,7 +85,7 @@ struct CommandAdapter: HarnessAdapter {
 public enum Harnesses {
     public static var builtins: [any HarnessAdapter] { builtins(yolo: false) }
 
-    public static func builtins(yolo: Bool) -> [any HarnessAdapter] {
+    public static func builtins(yolo: Bool, configuration: Configuration = Configuration()) -> [any HarnessAdapter] {
         let codex = yolo ? ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox"] :
             ["codex", "--ask-for-approval", "never", "exec", "--sandbox", "workspace-write"]
         let codexFlags = yolo ? ["--dangerously-bypass-approvals-and-sandbox"] : ["--sandbox"]
@@ -100,10 +100,12 @@ public enum Harnesses {
             CommandAdapter(name: "opencode", arguments: ["opencode", "run"] +
                 (yolo ? ["--auto"] : []) + ["{prompt}"], helpArguments: ["opencode", "run", "--help"]),
             CommandAdapter(name: "gemini", arguments: ["gemini", "--approval-mode", yolo ? "yolo" : "auto_edit", "--prompt", "{prompt}"],
-                requiredFlags: ["--approval-mode", "--prompt", yolo ? "yolo" : "auto_edit"])]
+                requiredFlags: ["--approval-mode", "--prompt", yolo ? "yolo" : "auto_edit"]),
+            OllamaAdapter(configuration: configuration)]
     }
     public static func select(configuration: Configuration, directory: URL, yolo: Bool = false) throws -> any HarnessAdapter {
-        let adapters = builtins(yolo: yolo)
+        try configuration.validate()
+        let adapters = builtins(yolo: yolo, configuration: configuration)
         if configuration.harness == "custom" {
             guard !yolo else { throw BSAError.message("--yolo only supports built-in harnesses; configure customCommand explicitly for a custom harness") }
             guard let command = configuration.customCommand, let executable = command.first, !executable.isEmpty, !executable.hasPrefix("-"), !executable.contains("="), (executable.hasPrefix("/") || !executable.contains("/")), command.dropFirst().contains(where: { $0.contains("{prompt}") }) else { throw BSAError.message("customCommand requires an executable and {prompt} argument") }
@@ -114,6 +116,6 @@ public enum Harnesses {
             return adapter
         }
         for adapter in adapters { if (try? adapter.detect(in: directory)) != nil { return adapter } }
-        throw BSAError.message("Install Codex, Claude Code, Pi, OpenCode or Gemini, or configure a custom harness")
+        throw BSAError.message("Install Codex, Claude Code, Pi, OpenCode or Gemini, or configure Ollama or a custom harness")
     }
 }

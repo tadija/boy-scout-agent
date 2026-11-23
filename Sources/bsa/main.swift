@@ -6,7 +6,7 @@ import Glibc
 import Darwin
 #endif
 
-let version = "0.1.1"
+let version = "0.2.0"
 
 let help = """
 Boy Scout Agent — one run, one improvement, one commit.
@@ -29,13 +29,15 @@ Run options:
   --count N                         Maximum iterations (default: 1)
   --duration DURATION | --until HH:MM
                                     Execution window, e.g. 4h; or local stop time
-  --harness NAME                    codex, claude, pi, opencode, gemini, or custom
+  --harness NAME                    codex, claude, pi, opencode, gemini, ollama, or custom
+  --ollama-model NAME               Installed Ollama model with tool support
+  --ollama-host URL                 Ollama server URL
   --branch NAME --base REV           Target branch and starting revision
   --force                           Adopt an existing target branch from its tip
   --identity VALUE                  \"Name <email>\" or git for configured Git identity
   --instructions TEXT               Override configured project guidance
   --skip-checks                     Skip both baseline and verification commands
-  --yolo                            Enable the built-in harness's permissive mode
+  --yolo                            Enable permissive mode (Ollama already allows shell commands)
 
 Config options:
   --prompt                          Print the full prompt with instructions and recent history
@@ -47,7 +49,7 @@ Schedule subcommands:
   remove ID                         Remove schedule files; unload native timers first
 
 Options override configuration. Built-in commit identity: Boy Scout Agent <boy-scout-agent@localhost>.
-Runs use Codex, Claude Code, Pi, OpenCode, or Gemini in discovery order unless configured.
+Runs discover Codex, Claude Code, Pi, OpenCode, Gemini, then configured Ollama unless selected.
 Swift packages use swift test automatically; other projects need verification commands
 in bsa.json (or explicit [] to skip them). Push requires explicit configuration.
 
@@ -113,7 +115,7 @@ do {
                     index += 1
                     continue
                 }
-                guard ["--instructions", "--identity", "--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
+                guard ["--ollama-model", "--ollama-host", "--instructions", "--identity", "--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
                     throw BSAError.message("Unknown or incomplete option: \(args[index]). See bsa --help.")
                 }
                 if args[index] == "--duration" {
@@ -126,6 +128,8 @@ do {
                 else if args[index] == "--base" { configuration.base = args[index + 1] }
                 else if args[index] == "--instructions" { configuration.instructions = args[index + 1] }
                 else if args[index] == "--identity" { configuration.commitIdentity = args[index + 1] }
+                else if args[index] == "--ollama-model" { configuration.ollamaModel = args[index + 1] }
+                else if args[index] == "--ollama-host" { configuration.ollamaHost = args[index + 1] }
                 else if args[index] == "--harness" { configuration.harness = args[index + 1] }
                 else {
                     guard let count = Int(args[index + 1]), count > 0 else { throw BSAError.message("--count requires a positive integer") }
@@ -192,7 +196,11 @@ do {
             print(String(decoding: try encoder.encode(Configuration.load(repository: Repository(at: directory))), as: UTF8.self))
         case "harnesses":
             guard args.count == 1 else { throw BSAError.message("harnesses takes no options") }
-            for adapter in Harnesses.builtins {
+            let configuration: Configuration
+            if let repository = try? Repository(at: directory) {
+                configuration = try Configuration.load(repository: repository)
+            } else { configuration = Configuration() }
+            for adapter in Harnesses.builtins(yolo: false, configuration: configuration) {
                 do {
                     try adapter.detect(in: directory)
                     print("\(adapter.name): available")

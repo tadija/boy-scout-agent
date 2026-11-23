@@ -35,7 +35,7 @@ chmod +x "$fixture/bin/codex"
 export PATH="$fixture/bin:$PATH"
 export XDG_DATA_HOME="$fixture/data"
 cd "$fixture"
-[ "$("$bsa" --version)" = "Boy Scout Agent 0.1.1" ]
+[ "$("$bsa" --version)" = "Boy Scout Agent 0.2.0" ]
 if "$bsa" --version extra > "$fixture/invalid-version" 2>&1; then exit 1; fi
 cd "$fixture/project"
 "$bsa" init > "$fixture/init"

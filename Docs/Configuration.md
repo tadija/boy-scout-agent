@@ -15,7 +15,7 @@ target branch. It does not invoke a harness. History changes after each iteratio
 Overrides passed to a previous `bsa run --instructions` are not saved; this preview
 uses the current global and repository configuration.
 
-Automatic settings (`base`, `branch`, `harness`, `customCommand`, `baseline`, and `verification`) are written as `null`. For baseline and verification, `null` has the same automatic behavior as omitting the property; `[]` explicitly skips commands. The generated file uses built-in defaults, independent of global settings, and its explicit values override global settings.
+Automatic settings (`base`, `branch`, `harness`, `customCommand`, `ollamaModel`, `baseline`, and `verification`) are written as `null`. For baseline and verification, `null` has the same automatic behavior as omitting the property; `[]` explicitly skips commands. The generated file uses built-in defaults, independent of global settings, and its explicit values override global settings.
 
 A minimal hand-written configuration also works:
 
@@ -32,7 +32,11 @@ A minimal hand-written configuration also works:
 | `verification` | Ordered shell commands for the proposed change in a fresh checkout. Include any setup they need. Defaults to `swift test` for Swift packages; otherwise commands must be configured. Set `[]` to explicitly skip project verification. |
 | `protectedPaths` | Additional case-sensitive POSIX glob patterns against repository-relative paths. `*` can match slashes, e.g. `vendor/*`. Built-in protections always apply. |
 | `instructions` | Additional project preferences for the agent. Override for one run with `--instructions "..."`. |
-| `harness` | Automatic discovery, or choose `codex`, `claude`, `pi`, `opencode`, `gemini`, or `custom`. |
+| `harness` | Automatic discovery, or choose `codex`, `claude`, `pi`, `opencode`, `gemini`, `ollama`, or `custom`. |
+| `ollamaModel` | `null`; required when selecting Ollama. Name of an installed model with tool support. Override with `--ollama-model`. |
+| `ollamaHost` | `http://127.0.0.1:11434`; server base URL. Override with `--ollama-host`. |
+| `ollamaMaxTurns` | 40 model responses per iteration (1–200). Exhaustion fails the iteration without committing. |
+| `ollamaContextLength` | 32768 context tokens per request (4096–1048576). Set according to model support and server memory. |
 | `customCommand` | For a custom harness, give the executable and arguments as an array, e.g. `["my-agent", "{prompt}"]`. Use `{cwd}` for the worktree path. Arguments are passed directly. |
 | `commitIdentity` | Author and committer for BSA commits. Default: `Boy Scout Agent <boy-scout-agent@localhost>`. Set `git` to use the configured Git identity, or supply `Name <email>`. Override with `--identity`. |
 | `base`, `branch` | Starting revision and local target branch. Defaults are HEAD and `bsa/<project>`. |
@@ -63,8 +67,9 @@ bsa run --harness claude --yolo
 | Pi | Adds `--approve` | Trusts project-local resources for this invocation. Pi already runs tools without per-call approvals. |
 | OpenCode | Adds `--auto` | Auto-approves permissions that are not explicitly denied. Explicit denials still apply. |
 | Gemini | `--approval-mode yolo` instead of `--approval-mode auto_edit` | Auto-approves all tool calls instead of just edit tools. |
+| Ollama | No additional effect | Shell commands are available by default. File tools retain path restrictions. |
 
-The mappings are checked against each installed CLI's help output before execution. Older versions missing these flags are rejected. Custom harnesses must configure their own arguments in `customCommand`; combining them with `--yolo` is rejected.
+External CLI mappings are checked against each installed CLI's help output before execution. Older versions missing these flags are rejected. Custom harnesses must configure their own arguments in `customCommand`; combining them with `--yolo` is rejected.
 
 This affects the agent process's execution permissions, not BSA's Git guards, verification commands, or publishing rules. Codex's sandbox is disabled in this mode; a Git worktree does not restrict filesystem or network access. Normal arguments remain the default when the flag is absent. See [Pi's security model](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/security.md) for the distinction between project trust and tool permissions. Other mappings were verified with the installed `codex exec --help`, `claude --help`, and `opencode run --help`.
 
@@ -73,6 +78,59 @@ Gemini runs headlessly with `--prompt` from the BSA worktree. Normal mode uses
 Use `bsa run --harness gemini --yolo` for Gemini's permissive mode. These arguments
 were checked against the installed `gemini --help` and the official
 [Gemini reference](https://geminicli.com/docs/cli/cli-reference/).
+
+## Ollama
+
+Ollama runs through BSA's own tool-calling agent; Codex and other agent CLIs are
+not required. Use the base URL of your server, the same address whose root page
+says “Ollama is running,” and an installed model that supports tools:
+
+```sh
+bsa run --harness ollama --ollama-host http://192.168.1.50:11434 --ollama-model my-coding-model
+```
+
+Replace `my-coding-model` with a model installed on your server. To keep the settings:
+
+```json
+{
+  "harness": "ollama",
+  "ollamaHost": "http://192.168.1.50:11434",
+  "ollamaModel": "my-coding-model",
+  "ollamaMaxTurns": 40,
+  "ollamaContextLength": 32768,
+  "verification": ["swift test"]
+}
+```
+
+Use your project's verification commands. `bsa doctor` checks connectivity and
+model tool support via `/api/show`; BSA never pulls a model or starts an Ollama
+server. An Ollama CLI installation is not needed on the BSA machine. The server
+must be listening on an address reachable from that machine. See Ollama's
+[network configuration](https://docs.ollama.com/faq#how-can-i-expose-ollama-on-my-network)
+for server-side setup. Repository content and project guidance are sent to the
+configured server, so choose an endpoint you trust.
+
+The agent can list unignored and tracked files, read text, search literal strings,
+write files, and replace unique text matches. File tools stay inside the worktree,
+reject symlinks and secret paths, and enforce BSA's protected paths when writing.
+File reads/writes are limited to 1 MiB, tool responses to 32 KiB, and each model
+response to 16 tool calls. Text files can be read in pages using line ranges.
+Baseline and verification commands still run independently as configured.
+
+Shell commands are available by default through `run_command`, so the agent can
+inspect Git diffs and run builds or tests without `--yolo`. Those commands run
+with the BSA process's permissions and can access paths outside the worktree;
+BSA's normal Git and final diff checks still apply. `--yolo` has no additional
+effect on Ollama. Runs respect cancellation,
+the iteration deadline, and `ollamaMaxTurns`; failed or unfinished runs do not
+publish partial edits. Each iteration starts a fresh conversation.
+
+Ollama comes last in discovery order and is available for discovery only when
+`ollamaModel` is configured and the server advertises tool support. Select
+`--harness ollama` explicitly to ensure a run uses it. API requests follow the
+[Ollama tool-calling protocol](https://docs.ollama.com/capabilities/tool-calling).
+Use locally installed models and your server's local-only settings if you need
+inference to stay on your own infrastructure; BSA does not control Ollama's cloud model routing.
 
 ## Instructions from the CLI
 

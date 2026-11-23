@@ -312,15 +312,8 @@ public final class Runner {
 
     private func validate(paths: [String], repository: Repository, worktree: URL, limit: Int, protectedPaths: [String]) throws {
         guard paths.count <= limit else { throw BSAError.message("Change exceeds maxChangedFiles") }
-        let blocked = [".env", ".git", ".github", "bsa.json", "secrets", "credentials", "package.resolved", "package-lock.json", "yarn.lock", "package.swift", "makefile", "agents.md", "claude.md"]
         for path in paths {
-            guard !protectedPaths.contains(where: { fnmatch($0, path, 0) == 0 }) else {
-                throw BSAError.message("Configured protected path: " + path)
-            }
-            let parts = path.lowercased().split(separator: "/").map(String.init)
-            guard !parts.contains(where: { part in blocked.contains(part) || part.hasPrefix(".env.") || part.hasSuffix(".pem") || part.hasSuffix(".key") || [".build", "node_modules", "dist", "build"].contains(part) }) else {
-                throw BSAError.message("Protected or generated path: \(path)")
-            }
+            try ChangePolicy.validate(path: path, protectedPaths: protectedPaths)
         }
         let modes = try repository.git(["diff", "--cached", "--no-renames", "--raw"], at: worktree)
         for entry in modes.split(separator: "\n") {
