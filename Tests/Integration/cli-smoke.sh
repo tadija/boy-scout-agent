@@ -45,11 +45,13 @@ cmp bsa.json "$fixture/defaults.json"
 if "$bsa" init extra > "$fixture/invalid-init" 2>&1; then exit 1; fi
 for command in init update run config status history stop doctor harnesses schedule; do
   "$bsa" "$command" --help > "$fixture/command-help"
-  grep -q 'config show' "$fixture/command-help"
+  grep -q 'config           Print' "$fixture/command-help"
 done
 if "$bsa" update extra > "$fixture/invalid-update" 2>&1; then exit 1; fi
 "$bsa" schedule add --help > "$fixture/schedule-help"
-"$bsa" config show --help > "$fixture/config-help"
+"$bsa" config --help > "$fixture/config-help"
+grep -q 'Schedule subcommands:' "$fixture/schedule-help"
+if "$bsa" config show > "$fixture/obsolete-config" 2>&1; then exit 1; fi
 git init -q -b main
 git config user.name 'BSA Test'
 git config user.email 'bsa@example.invalid'
@@ -59,7 +61,7 @@ git add .
 git commit -qm Initial
 cp bsa.json "$fixture/project-config.json"
 cp "$fixture/defaults.json" bsa.json
-"$bsa" config show > "$fixture/initial-config"
+"$bsa" config > "$fixture/initial-config"
 cmp "$fixture/initial-config" "$fixture/defaults.json"
 cp "$fixture/project-config.json" bsa.json
 printf 'uncommitted user work\n' > value.txt
@@ -131,7 +133,7 @@ BSA_TEST_YOLO=1 "$bsa" run --harness codex --yolo > "$fixture/codex-yolo"
 grep -q 'no_candidate on' "$fixture/codex-yolo"
 "$bsa" history > "$fixture/history"
 grep -q committed "$fixture/history"
-"$bsa" config show > "$fixture/config"
+"$bsa" config > "$fixture/config"
 "$bsa" schedule add --at 00:00 --duration 4h > "$fixture/schedule"
 "$bsa" schedule list > "$fixture/schedules"
 grep -q 'daily 00:00 for 4h' "$fixture/schedules"
@@ -174,4 +176,17 @@ grep -q 'Verification skipped' "$fixture/skipped-progress"
 grep -q 'committed on bsa/skipped' "$fixture/skipped"
 "$bsa" doctor > "$fixture/skipped-doctor"
 grep -q 'Baseline: skipped. Verification: skipped' "$fixture/skipped-doctor"
+# The CLI flag overrides both phases without changing configuration.
+printf '%s\n' '{"baseline":["false"],"verification":["false"]}' > bsa.json
+cp bsa.json "$fixture/skip-config"
+"$bsa" run --skip-checks --branch bsa/skip-both > "$fixture/skip-both" 2> "$fixture/skip-both-progress"
+grep -q 'committed on bsa/skip-both' "$fixture/skip-both"
+grep -q 'Baseline skipped' "$fixture/skip-both-progress"
+grep -q 'Verification skipped' "$fixture/skip-both-progress"
+cmp bsa.json "$fixture/skip-config"
+printf '%s\n' '{}' > bsa.json
+"$bsa" run --skip-checks --branch bsa/no-verification > "$fixture/no-verification" 2> "$fixture/no-verification-progress"
+grep -q 'committed on bsa/no-verification' "$fixture/no-verification"
+if "$bsa" run --branch bsa/needs-verification > "$fixture/needs-verification" 2>&1; then exit 1; fi
+grep -q 'No meaningful verification detected' "$fixture/needs-verification"
 printf 'CLI smoke test passed\n'

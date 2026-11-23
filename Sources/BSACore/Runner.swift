@@ -34,7 +34,7 @@ public final class Runner {
     }
 
     public func runSession(at directory: URL, configuration: Configuration, harness: any HarnessAdapter,
-                           dataDirectory: URL? = nil, deadline: Date? = nil, force: Bool = false, onProgress: (String) -> Void = { _ in }, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
+                           dataDirectory: URL? = nil, deadline: Date? = nil, force: Bool = false, skipChecks: Bool = false, onProgress: (String) -> Void = { _ in }, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
         try configuration.validate()
         let repo = try Repository(at: directory)
         let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
@@ -53,7 +53,7 @@ public final class Runner {
             if Cancellation.shouldStop || deadline.map({ Date() >= $0 }) == true { break }
             onProgress("Iteration \(index + 1) of \(configuration.maxIterations)")
             let budget = min(configuration.timeoutSeconds, deadline?.timeIntervalSinceNow ?? .infinity)
-            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, deadline: ProcessInfo.processInfo.systemUptime + budget, force: force, onProgress: onProgress)
+            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, deadline: ProcessInfo.processInfo.systemUptime + budget, force: force, skipChecks: skipChecks, onProgress: onProgress)
             records.append(record)
             onIteration(record)
             failures = ["committed", "no_candidate"].contains(record.outcome) ? 0 : failures + 1
@@ -64,7 +64,7 @@ public final class Runner {
     }
 
     public func run(at directory: URL, configuration: Configuration? = nil,
-                    harness: HarnessAdapter = Harnesses.builtins[0], dataDirectory: URL? = nil, force: Bool = false, onProgress: (String) -> Void = { _ in }) throws -> Record {
+                    harness: HarnessAdapter = Harnesses.builtins[0], dataDirectory: URL? = nil, force: Bool = false, skipChecks: Bool = false, onProgress: (String) -> Void = { _ in }) throws -> Record {
         let repo = try Repository(at: directory)
         let config = try configuration ?? Configuration.load(repository: repo)
         try config.validate()
@@ -77,11 +77,11 @@ public final class Runner {
         Cancellation.stopFile = stop
         defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
         try harness.detect(in: repo.root)
-        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds, force: force, onProgress: onProgress)
+        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds, force: force, skipChecks: skipChecks, onProgress: onProgress)
     }
 
     private func iteration(repo: Repository, config: Configuration, harness: any HarnessAdapter,
-                           store: StateStore, sessionID: String, deadline: TimeInterval, force: Bool, onProgress: (String) -> Void) throws -> Record {
+                           store: StateStore, sessionID: String, deadline: TimeInterval, force: Bool, skipChecks: Bool, onProgress: (String) -> Void) throws -> Record {
         let history = try store.latest
         if let previous = history, previous.outcome == "running" {
             var recovered = previous
@@ -183,13 +183,13 @@ public final class Runner {
             try beginPhase("Setup")
             try addWorktree(worktree)
             let refs = try repo.refs()
-            let verification: [String]
-            if let configured = config.verification { verification = configured }
-            else if FileManager.default.fileExists(atPath: worktree.appendingPathComponent("Package.swift").path) { verification = ["swift test"] }
-            else { verification = [] }
-            guard config.verification != nil || !verification.isEmpty else {
+            let resolvedVerification: [String]
+            if let configured = config.verification { resolvedVerification = configured }
+            else if FileManager.default.fileExists(atPath: worktree.appendingPathComponent("Package.swift").path) { resolvedVerification = ["swift test"] }
+            else { resolvedVerification = [] }
+            guard skipChecks || config.verification != nil || !resolvedVerification.isEmpty else {
                 record.terminal = true
-                throw BSAError.message("No meaningful verification detected. Configure verification commands in bsa.json, or explicitly set verification to [] to skip them (Swift packages use swift test automatically).")
+                throw BSAError.message("No meaningful verification detected. Configure verification commands in bsa.json, or use --skip-checks or set verification to [] to skip them (Swift packages use swift test automatically).")
             }
             func assertGit(at directory: URL) throws {
                 guard try repo.git(["rev-parse", "HEAD"], at: directory) == baseline,
@@ -199,7 +199,8 @@ public final class Runner {
                     throw BSAError.message("Harness or checks changed HEAD or repository refs")
                 }
             }
-            let baselineCommands = config.baseline ?? verification
+            let verification = skipChecks ? [] : resolvedVerification
+            let baselineCommands = skipChecks ? [] : (config.baseline ?? resolvedVerification)
             if baselineCommands.isEmpty { onProgress("Baseline skipped (empty command list)") }
             else {
                 try beginPhase("Baseline")

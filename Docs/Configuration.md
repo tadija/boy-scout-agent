@@ -1,10 +1,10 @@
 # Repository configuration
 
-Run `bsa init` in the root of your checkout to generate an optional `bsa.json` with every property set to its built-in default. It refuses to overwrite an existing file and works before Git initialization. Edit the file for your project, or keep only the settings you need. Run `bsa config show` to inspect the effective settings.
+Run `bsa init` in the root of your checkout to generate an optional `bsa.json` with every property set to its built-in default. It refuses to overwrite an existing file and works before Git initialization. Edit the file for your project, or keep only the settings you need. Run `bsa config` to inspect the effective settings.
 
 ```sh
 bsa init
-bsa config show
+bsa config
 ```
 
 Automatic settings (`base`, `branch`, `harness`, `customCommand`, `baseline`, and `verification`) are written as `null`. For baseline and verification, `null` has the same automatic behavior as omitting the property; `[]` explicitly skips commands. The generated file uses built-in defaults, independent of global settings, and its explicit values override global settings.
@@ -68,6 +68,17 @@ bsa run --instructions "Focus on error handling; preserve public APIs."
 The quoted text replaces configured `instructions` for this invocation and applies to every iteration. Use `--instructions ""` to clear configured guidance for a run. No `bsa.json` file is required; BSA's built-in constraints remain in effect.
 
 ## Baseline and verification
+
+Skip both phases for one invocation without changing configuration:
+
+```sh
+bsa run --skip-checks
+```
+
+`--skip-checks` takes no value and skips baseline and verification commands for
+every iteration in the run, including configured commands and automatic Swift
+checks. It also permits running projects without detected verification.
+To skip only one phase, configure its command array as `[]`.
 
 Commands run in order from the worktree root, in each phase's separate checkout. Include dependency installation or other setup in each phase that needs it; baseline build artifacts are not shared with verification. A failed command stops the phase.
 

@@ -17,17 +17,13 @@ Commands:
   init             Create bsa.json with all built-in defaults in the current directory
   update           Download main from GitHub, build, and replace this executable
   run              Run isolated improvement iterations
-  config show      Print effective configuration (global + repository settings)
+  config           Print effective configuration (global + repository settings)
   status           Show the latest session and active phase
   history          List recorded iterations for this repository
   stop             Request cancellation of the active session
   doctor           Check the repository, harness, and verification configuration
   harnesses        List built-in harness availability
-  schedule add --at HH:MM --duration DURATION
-                   Generate files for a daily schedule (host local time)
-  schedule list    List generated schedules
-  schedule remove ID
-                   Remove generated schedule files; unload native timers first
+  schedule         Manage generated daily schedule files
 
 Run options:
   --count N                         Maximum iterations (default: 1)
@@ -38,7 +34,14 @@ Run options:
   --force                           Adopt an existing target branch from its tip
   --identity VALUE                  \"Name <email>\" or git for configured Git identity
   --instructions TEXT               Override configured project guidance
+  --skip-checks                     Skip both baseline and verification commands
   --yolo                            Enable the built-in harness's permissive mode
+
+Schedule subcommands:
+  add --at HH:MM --duration DURATION
+                                    Generate a daily schedule (host local time)
+  list                              List generated schedules
+  remove ID                         Remove schedule files; unload native timers first
 
 Options override configuration. Built-in commit identity: Boy Scout Agent <boy-scout-agent@localhost>.
 Runs use Codex, Claude Code, Pi, or OpenCode in discovery order unless configured.
@@ -49,6 +52,7 @@ Help and version:
   bsa --help, bsa -h, bsa help        Show this help
   bsa <command> --help               Show this help
   bsa --version                     Show version
+
 State: $XDG_DATA_HOME/bsa (default ~/.local/share/bsa).
 """
 
@@ -58,8 +62,7 @@ do {
     let commands = ["update", "init", "run", "config", "status", "history", "stop", "doctor", "harnesses", "schedule"]
     let commandHelp = args.last == "--help" && (
         (args.count == 2 && commands.contains(args[0])) ||
-        (args.count == 3 && (args[0] == "config" && args[1] == "show" ||
-                            args[0] == "schedule" && ["add", "list", "remove"].contains(args[1])))
+        (args.count == 3 && args[0] == "schedule" && ["add", "list", "remove"].contains(args[1]))
     )
     if args.isEmpty || args == ["--help"] || args == ["-h"] || args == ["help"] || commandHelp {
         print(help)
@@ -88,9 +91,15 @@ do {
             var configuration = try Configuration.load(repository: Repository(at: directory))
             var yolo = false
             var force = false
+            var skipChecks = false
             var deadline: Date?
             var index = 1
             while index < args.count {
+                if args[index] == "--skip-checks" {
+                    skipChecks = true
+                    index += 1
+                    continue
+                }
                 if args[index] == "--yolo" {
                     yolo = true
                     index += 1
@@ -124,7 +133,7 @@ do {
             let harness = try Harnesses.select(configuration: configuration, directory: directory, yolo: yolo)
             if yolo { print("YOLO mode enabled for \(harness.name).") }
             print("Harness: \(harness.name). Up to \(configuration.maxIterations) isolated iterations…")
-            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness, deadline: deadline, force: force, onProgress: { message in
+            let records = try runner.runSession(at: directory, configuration: configuration, harness: harness, deadline: deadline, force: force, skipChecks: skipChecks, onProgress: { message in
                 FileHandle.standardError.write(Data((message + "\n").utf8))
             }) { record in
                 print("\(record.outcome) on \(record.branch)\(record.commit.map { " (\($0))" } ?? "")")
@@ -168,7 +177,7 @@ do {
             try runner.stop(at: directory)
             print("Cancellation requested.")
         case "config":
-            guard args == ["config", "show"] else { throw BSAError.message("Use config show") }
+            guard args.count == 1 else { throw BSAError.message("config takes no options") }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             print(String(decoding: try encoder.encode(Configuration.load(repository: Repository(at: directory))), as: UTF8.self))

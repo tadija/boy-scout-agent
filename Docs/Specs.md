@@ -138,7 +138,7 @@ bsa schedule add --at '00:00' --duration 4h
 bsa schedule list
 bsa schedule remove <id>
 bsa stop                        # cooperative cancellation
-bsa config show                 # effective configuration
+bsa config                 # effective configuration
 bsa doctor                      # Git, harness, and verification diagnostics
 ```
 

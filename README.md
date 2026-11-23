@@ -77,7 +77,7 @@ bsa run --count 100 --duration 4h
 
 `--yolo` selects the harness's permissive execution mode. See [harness permissions](Docs/Configuration.md#permissive-harness-mode) for each agent's behavior; BSA's Git and verification guards still apply.
 
-BSA reports the current phase on stderr and prints total and per-phase timings after each iteration. `bsa status` also shows the active phase. Timings include baseline checks, harness work, and independent verification; by default, checks run twice, and fresh worktrees may require fresh builds. Configure `baseline` and `verification` separately, or set either to `[]` to skip its commands.
+BSA reports the current phase on stderr and prints total and per-phase timings after each iteration. `bsa status` also shows the active phase. Timings include baseline checks, harness work, and independent verification; by default, checks run twice, and fresh worktrees may require fresh builds. Configure `baseline` and `verification` separately, or set either to `[]` to skip its commands. For one run, use `--skip-checks` to skip both phases.
 
 BSA starts each iteration with a fresh agent and recent run history. Run it again to continue improving the same branch.
 
