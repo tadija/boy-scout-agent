@@ -18,6 +18,25 @@ public struct Configuration: Codable {
     public var maxChangedFiles: Int = 12
     public init() {}
 
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(commitIdentity, forKey: .commitIdentity)
+        try container.encode(push, forKey: .push)
+        try container.encode(harness, forKey: .harness)
+        try container.encode(customCommand, forKey: .customCommand)
+        try container.encode(protectedPaths, forKey: .protectedPaths)
+        try container.encode(instructions, forKey: .instructions)
+        try container.encode(maxIterations, forKey: .maxIterations)
+        try container.encode(failureLimit, forKey: .failureLimit)
+        try container.encode(saturationLimit, forKey: .saturationLimit)
+        try container.encode(branch, forKey: .branch)
+        try container.encode(base, forKey: .base)
+        try container.encode(baseline, forKey: .baseline)
+        try container.encode(verification, forKey: .verification)
+        try container.encode(timeoutSeconds, forKey: .timeoutSeconds)
+        try container.encode(maxChangedFiles, forKey: .maxChangedFiles)
+    }
+
     public static func load(repository: Repository) throws -> Configuration {
         let configBase = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config").path
         let urls = [URL(fileURLWithPath: configBase).appendingPathComponent("bsa/config.json"), repository.root.appendingPathComponent("bsa.json")]

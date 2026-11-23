@@ -1,6 +1,15 @@
 # Repository configuration
 
-Create an optional `bsa.json` in the root of your checkout. Run `bsa config show` to inspect the effective settings.
+Run `bsa init` in the root of your checkout to generate an optional `bsa.json` with every property set to its built-in default. It refuses to overwrite an existing file and works before Git initialization. Edit the file for your project, or keep only the settings you need. Run `bsa config show` to inspect the effective settings.
+
+```sh
+bsa init
+bsa config show
+```
+
+Automatic settings (`base`, `branch`, `harness`, `customCommand`, `baseline`, and `verification`) are written as `null`. For baseline and verification, `null` has the same automatic behavior as omitting the property; `[]` explicitly skips commands. The generated file uses built-in defaults, independent of global settings, and its explicit values override global settings.
+
+A minimal hand-written configuration also works:
 
 ```json
 {
@@ -59,6 +68,37 @@ bsa run --instructions "Focus on error handling; preserve public APIs."
 The quoted text replaces configured `instructions` for this invocation and applies to every iteration. Use `--instructions ""` to clear configured guidance for a run. No `bsa.json` file is required; BSA's built-in constraints remain in effect.
 
 ## Baseline and verification
+
+Commands run in order from the worktree root, in each phase's separate checkout. Include dependency installation or other setup in each phase that needs it; baseline build artifacts are not shared with verification. A failed command stops the phase.
+
+For a Swift package, the defaults run `swift test` in both phases. To use a quick baseline and a broader final check:
+
+```json
+{
+  "baseline": ["swift build"],
+  "verification": ["swift test", "swift build -c release"]
+}
+```
+
+For a Rust project, check compilation first, then run tests and Clippy (requires the Clippy component):
+
+```json
+{
+  "baseline": ["cargo check --all-targets"],
+  "verification": ["cargo test --all-targets", "cargo clippy --all-targets -- -D warnings"]
+}
+```
+
+For a TypeScript project using npm and a committed `package-lock.json`, install dependencies in both checkouts. This example assumes `typecheck`, `test`, and `build` scripts in `package.json`, with `test` configured to exit after one run:
+
+```json
+{
+  "baseline": ["npm ci", "npm run typecheck"],
+  "verification": ["npm ci", "npm run typecheck", "npm test", "npm run build"]
+}
+```
+
+Adapt commands to your project's scripts and toolchain. To run identical commands in both phases, configure only `verification`.
 
 Skip baseline commands while keeping final verification:
 

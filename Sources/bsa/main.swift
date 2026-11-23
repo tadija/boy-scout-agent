@@ -11,26 +11,56 @@ let version = "0.1.1"
 let help = """
 Boy Scout Agent — one run, one improvement, one commit.
 
-Usage: bsa run [--duration 4h | --until HH:MM] [--count N] [--harness NAME] [--branch NAME] [--base REV] [--force] [--identity VALUE] [--instructions TEXT] [--yolo]
-       bsa schedule add --at HH:MM --duration 4h | list | remove ID
-       bsa stop | history | doctor | harnesses | config show
-       bsa status
-       bsa --help
-       bsa --version
+Usage: bsa <command> [options]
 
-Runs fresh isolated iterations with Codex, Claude Code, Pi or OpenCode. Swift packages use swift test automatically;
-other projects need verification commands in bsa.json (or explicit [] to skip them). Push requires explicit configuration.
---force adopts an existing target branch and continues from its tip, even if it diverged from the base.
---identity accepts "Name <email>" (default: Boy Scout Agent <boy-scout-agent@localhost>) or git for your configured Git identity.
---instructions supplies project guidance for this run, overriding configured instructions.
---yolo enables each built-in harness's permissive mode for this run; BSA Git and verification guards remain active.
+Commands:
+  init             Create bsa.json with all built-in defaults in the current directory
+  run              Run isolated improvement iterations
+  config show      Print effective configuration (global + repository settings)
+  status           Show the latest session and active phase
+  history          List recorded iterations for this repository
+  stop             Request cancellation of the active session
+  doctor           Check the repository, harness, and verification configuration
+  harnesses        List built-in harness availability
+  schedule add --at HH:MM --duration DURATION
+                   Generate files for a daily schedule (host local time)
+  schedule list    List generated schedules
+  schedule remove ID
+                   Remove generated schedule files; unload native timers first
+
+Run options:
+  --count N                         Maximum iterations (default: 1)
+  --duration DURATION | --until HH:MM
+                                    Execution window, e.g. 4h; or local stop time
+  --harness NAME                    codex, claude, pi, opencode, or custom
+  --branch NAME --base REV           Target branch and starting revision
+  --force                           Adopt an existing target branch from its tip
+  --identity VALUE                  \"Name <email>\" or git for configured Git identity
+  --instructions TEXT               Override configured project guidance
+  --yolo                            Enable the built-in harness's permissive mode
+
+Options override configuration. Built-in commit identity: Boy Scout Agent <boy-scout-agent@localhost>.
+Runs use Codex, Claude Code, Pi, or OpenCode in discovery order unless configured.
+Swift packages use swift test automatically; other projects need verification commands
+in bsa.json (or explicit [] to skip them). Push requires explicit configuration.
+
+Help and version:
+  bsa --help, bsa -h, bsa help        Show this help
+  bsa <command> --help               Show this help
+  bsa --version                     Show version
 State: $XDG_DATA_HOME/bsa (default ~/.local/share/bsa).
 """
 
 Cancellation.install()
 do {
     let args = Array(CommandLine.arguments.dropFirst())
-    if args.isEmpty || args == ["--help"] || args == ["-h"] || args == ["help"] || args == ["run", "--help"] || args == ["status", "--help"] {
+    let commands = ["init", "run", "config", "status", "history", "stop", "doctor", "harnesses", "schedule"]
+    let commandHelp = args.last == "--help" && (
+        (args.count == 2 && commands.contains(args[0])) ||
+        (args.count == 3 && (args[0] == "config" && args[1] == "show" ||
+                            args[0] == "schedule" && ["add", "list", "remove"].contains(args[1])))
+    )
+    if args.isEmpty || args == ["--help"] || args == ["-h"] || args == ["help"] || commandHelp {
         print(help)
     } else if args == ["--version"] {
         print("Boy Scout Agent \(version)")
@@ -38,6 +68,15 @@ do {
         let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let runner = Runner()
         switch args[0] {
+        case "init":
+            guard args.count == 1 else { throw BSAError.message("init takes no options") }
+            let destination = directory.appendingPathComponent("bsa.json")
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            var data = try encoder.encode(Configuration())
+            data.append(0x0A)
+            try data.write(to: destination, options: .withoutOverwriting)
+            print("Created \(destination.path)")
         case "run":
             var configuration = try Configuration.load(repository: Repository(at: directory))
             var yolo = false

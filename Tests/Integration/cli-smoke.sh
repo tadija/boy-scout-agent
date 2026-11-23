@@ -38,6 +38,17 @@ cd "$fixture"
 [ "$("$bsa" --version)" = "Boy Scout Agent 0.1.1" ]
 if "$bsa" --version extra > "$fixture/invalid-version" 2>&1; then exit 1; fi
 cd "$fixture/project"
+"$bsa" init > "$fixture/init"
+cp bsa.json "$fixture/defaults.json"
+if "$bsa" init > "$fixture/existing-init" 2>&1; then exit 1; fi
+cmp bsa.json "$fixture/defaults.json"
+if "$bsa" init extra > "$fixture/invalid-init" 2>&1; then exit 1; fi
+for command in init run config status history stop doctor harnesses schedule; do
+  "$bsa" "$command" --help > "$fixture/command-help"
+  grep -q 'config show' "$fixture/command-help"
+done
+"$bsa" schedule add --help > "$fixture/schedule-help"
+"$bsa" config show --help > "$fixture/config-help"
 git init -q -b main
 git config user.name 'BSA Test'
 git config user.email 'bsa@example.invalid'
@@ -45,6 +56,11 @@ printf 'before\n' > value.txt
 printf '{"verification":["test -s value.txt"],"instructions":"CONFIG_INSTRUCTIONS_MUST_BE_OVERRIDDEN"}\n' > bsa.json
 git add .
 git commit -qm Initial
+cp bsa.json "$fixture/project-config.json"
+cp "$fixture/defaults.json" bsa.json
+"$bsa" config show > "$fixture/initial-config"
+cmp "$fixture/initial-config" "$fixture/defaults.json"
+cp "$fixture/project-config.json" bsa.json
 printf 'uncommitted user work\n' > value.txt
 "$bsa" --help > "$fixture/help"
 "$bsa" status > "$fixture/before"

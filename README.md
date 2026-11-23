@@ -18,7 +18,7 @@ bsa --version
 
 ## Run on any project
 
-Open a trusted repository with at least one commit. Swift packages use `swift test` automatically. For other projects, configure verification commands or explicitly set `verification` to `[]` to skip project checks. See [repository configuration](Docs/Configuration.md).
+Open a trusted repository with at least one commit. Swift packages use `swift test` automatically. For other projects, configure verification commands or explicitly set `verification` to `[]` to skip project checks. Run `bsa init` to generate `bsa.json` with all built-in defaults, then edit it for your project. See [repository configuration](Docs/Configuration.md) for Swift, Rust, and TypeScript baseline/verification examples.
 
 ```sh
 bsa run
