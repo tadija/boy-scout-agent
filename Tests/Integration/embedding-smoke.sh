@@ -4,16 +4,15 @@ set -eu
 source_directory=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT HUP INT TERM
-mkdir -p "$fixture/Plugins" "$fixture/Sources/Fixture"
+mkdir -p "$fixture/Plugins" "$fixture/Sources/Fixture" "$fixture/Scripts"
 cp -R "$source_directory/Plugins/EmbedMission" "$fixture/Plugins/"
-cp -R "$source_directory/Sources/MissionGenerator" "$fixture/Sources/"
+cp "$source_directory/Scripts/embed-mission.swift" "$fixture/Scripts/"
 cat > "$fixture/Package.swift" <<'PACKAGE'
 // swift-tools-version: 6.0
 import PackageDescription
 let package = Package(name: "EmbeddingFixture", targets: [
     .executableTarget(name: "Fixture", plugins: ["EmbedMission"]),
-    .executableTarget(name: "MissionGenerator"),
-    .plugin(name: "EmbedMission", capability: .buildTool(), dependencies: ["MissionGenerator"])
+    .plugin(name: "EmbedMission", capability: .buildTool())
 ])
 PACKAGE
 cat > "$fixture/Sources/Fixture/main.swift" <<'SWIFT'
@@ -33,8 +32,8 @@ swift build --package-path "$fixture" --product Fixture
 "$binary_directory/Fixture" > "$fixture/actual"
 cmp "$fixture/prompt.md" "$fixture/actual"
 # A changed generator must also invalidate the generated source.
-sed 's/Generated from/Regenerated from/' "$fixture/Sources/MissionGenerator/main.swift" > "$fixture/generator"
-mv "$fixture/generator" "$fixture/Sources/MissionGenerator/main.swift"
+sed 's/Generated from/Regenerated from/' "$fixture/Scripts/embed-mission.swift" > "$fixture/generator"
+mv "$fixture/generator" "$fixture/Scripts/embed-mission.swift"
 swift build --package-path "$fixture" --product Fixture
 generated_file=$(find "$fixture/.build" -name EmbeddedMission.swift -print -quit)
 grep -q 'Regenerated from' "$generated_file"

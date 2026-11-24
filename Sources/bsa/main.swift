@@ -6,8 +6,6 @@ import Glibc
 import Darwin
 #endif
 
-let version = "0.2.0"
-
 let help = """
 Boy Scout Agent — one run, one improvement, one commit.
 
@@ -57,7 +55,7 @@ in bsa.json (or explicit [] to skip them). Push requires explicit configuration.
 Help and version:
   bsa --help, bsa -h, bsa help        Show this help
   bsa <command> --help               Show this help
-  bsa --version                     Show version
+  bsa --version                     Show version and build
 
 State: $XDG_DATA_HOME/bsa (default ~/.local/share/bsa).
 """
@@ -73,7 +71,7 @@ do {
     if args.isEmpty || args == ["--help"] || args == ["-h"] || args == ["help"] || commandHelp {
         print(help)
     } else if args == ["--version"] {
-        print("Boy Scout Agent \(version)")
+        print(BuildVersion.display)
     } else {
         let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let runner = Runner()

@@ -1,7 +1,7 @@
 import XCTest
 @testable import BSACore
 
-final class PromptTests: RepositoryTestCase {
+final class AgentDefinitionTests: XCTestCase {
     func testEmbeddedMissionMatchesCanonicalMarkdownExactly() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
@@ -9,7 +9,7 @@ final class PromptTests: RepositoryTestCase {
                        try String(contentsOf: root.appendingPathComponent("prompt.md"), encoding: .utf8))
     }
 
-    func testIdentityAndPolicyDefaultsRemainCompatible() {
+    func testBoyScoutIdentityAndPolicyDefaults() {
         let agent = AgentDefinition.boyScout
         XCTAssertEqual(agent.name, "Boy Scout Agent")
         XCTAssertEqual(agent.executableName, "bsa")
@@ -19,6 +19,9 @@ final class PromptTests: RepositoryTestCase {
         XCTAssertEqual(Configuration().saturationLimit, 2)
     }
 
+}
+
+final class PromptTests: RepositoryTestCase {
     func testMissionOverrideKeepsContractAndGuidanceSeparate() throws {
         try write("mission.md", "Custom mission: document the importer.\n")
         try write("bsa.json", #"{"prompt":"mission.md","instructions":"Keep examples concise."}"#)

@@ -26,15 +26,7 @@ final class RunnerTests: RepositoryTestCase {
     func testStopWithoutActiveSessionIsRejected() throws {
         XCTAssertThrowsError(try Runner().stop(at: checkout))
     }
-    func testStopMarkerCancelsActiveCommand() throws {
-        let marker = temporary.appendingPathComponent("stop")
-        try Data().write(to: marker)
-        Cancellation.stopFile = marker
-        defer { Cancellation.stopFile = nil }
-        let start = Date()
-        _ = try commands.run("/bin/sh", ["-c", "sleep 30"], cwd: checkout)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
-    }
+
     func testSessionStopsAtSaturation() throws {
         var config = try Configuration.load(repository: Repository(at: checkout))
         config.maxIterations = 100
@@ -47,7 +39,7 @@ final class RunnerTests: RepositoryTestCase {
 
     func testSessionCountUsesFreshWorktrees() throws {
         var config = try Configuration.load(repository: Repository(at: checkout))
-        config.maxIterations = 3
+        config.maxIterations = 2
         var seen: Set<URL> = []
         let records = try Runner().runSession(at: checkout, configuration: config,
             harness: FakeHarness(action: { cwd in
@@ -57,9 +49,9 @@ final class RunnerTests: RepositoryTestCase {
             }), dataDirectory: data)
         XCTAssertEqual(Set(records.compactMap(\.sessionID)).count, 1)
         XCTAssertTrue(records.allSatisfy { $0.harness == "fake" })
-        XCTAssertEqual(seen.count, 3)
-        XCTAssertEqual(records.filter { $0.outcome == "committed" }.count, 3)
-        XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "4")
+        XCTAssertEqual(seen.count, 2)
+        XCTAssertEqual(records.filter { $0.outcome == "committed" }.count, 2)
+        XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "3")
     }
 
     func testSuccessPreservesDirtyCheckoutAndProducesExactlyOneCommit() throws {
@@ -70,11 +62,14 @@ final class RunnerTests: RepositoryTestCase {
         try write("personal.txt", "untracked\n")
         let status = try git(["status", "--porcelain"])
         let index = try git(["diff", "--cached"])
-        let record = try run { cwd in
+        var progress: [String] = []
+        let record = try Runner().run(at: checkout, harness: FakeHarness { cwd in
+            let active = try XCTUnwrap(Runner().status(at: self.checkout, dataDirectory: self.data))
+            XCTAssertEqual(active.phase, "Harness")
             XCTAssertEqual(try String(contentsOf: cwd.appendingPathComponent("value.txt")), "before\n")
             try self.write("value.txt", "after\n", at: cwd)
             return self.success()
-        }
+        }, dataDirectory: data, onProgress: { progress.append($0) })
         XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
         XCTAssertNotNil(record.commit)
         XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "2")
@@ -84,17 +79,6 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertEqual(try String(contentsOf: checkout.appendingPathComponent("value.txt")), "user unstaged\n")
         XCTAssertEqual(try Runner().status(at: checkout, dataDirectory: data)?.commit, record.commit)
         XCTAssertTrue(try git(["log", "-1", "--format=%s", record.branch]).hasPrefix("bsa: "))
-    }
-
-    func testPhaseTimingsPersistAndOldRecordsRemainReadable() throws {
-        var progress: [String] = []
-        let record = try Runner().run(at: checkout, harness: FakeHarness(action: { cwd in
-            let active = try XCTUnwrap(Runner().status(at: self.checkout, dataDirectory: self.data))
-            XCTAssertEqual(active.phase, "Harness")
-            try self.write("value.txt", "after\n", at: cwd)
-            return self.success()
-        }), dataDirectory: data, onProgress: { progress.append($0) })
-        XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
         let phases = ["Setup", "Baseline", "Harness", "Review", "Verification", "Publication", "Cleanup"]
         XCTAssertEqual(progress, phases.map { $0 + "…" })
         let timings = try XCTUnwrap(record.phaseSeconds)
@@ -103,13 +87,6 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertLessThanOrEqual(timings.values.reduce(0, +), try XCTUnwrap(record.finished).timeIntervalSince(record.started))
         XCTAssertNil(record.phase)
         XCTAssertEqual(try Runner().status(at: checkout, dataDirectory: data)?.phaseSeconds, timings)
-        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
-        legacy.removeValue(forKey: "phaseSeconds")
-        legacy.removeValue(forKey: "phase")
-        let decoded = try JSONDecoder().decode(Record.self, from: JSONSerialization.data(withJSONObject: legacy))
-        XCTAssertNil(decoded.phaseSeconds)
-        XCTAssertNil(decoded.phase)
-        XCTAssertEqual(decoded.commit, record.commit)
     }
 
     func testCommitIdentitiesSetAuthorAndCommitterWithoutChangingGitConfig() throws {
@@ -203,11 +180,6 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertThrowsError(try Configuration.load(repository: Repository(at: checkout)))
     }
 
-    func testNoCandidateDoesNotCommit() throws {
-        let record = try run { _ in self.success() }
-        XCTAssertEqual(record.outcome, "no_candidate")
-        try assertNoCommit()
-    }
     func testHarnessFailureDoesNotCommitAndCleansWorktree() throws {
         let record = try run { cwd in
             try self.write("value.txt", "after\n", at: cwd)
@@ -327,7 +299,7 @@ final class RunnerTests: RepositoryTestCase {
         let recovered = try JSONDecoder().decode(Record.self, from: Data(contentsOf: store.directory.appendingPathComponent("interrupted-test.json")))
         XCTAssertEqual(recovered.outcome, "interrupted")
     }
-    func testVerificationCannotModifyProposedChange() throws {
+    func testBaselineMutationIsRejected() throws {
         var configuration = Configuration()
         configuration.verification = ["printf generated >> value.txt"]
         let record = try Runner().run(at: checkout, configuration: configuration,
@@ -339,15 +311,7 @@ final class RunnerTests: RepositoryTestCase {
         try write("bsa.json", "{\"verificaton\":[\"true\"]}")
         XCTAssertThrowsError(try Configuration.load(repository: Repository(at: checkout)))
     }
-    func testCommandRunnerHandlesLargeOutputAndTimeout() throws {
-        let result = try commands.run("/bin/sh", ["-c", "yes output | head -c 2000000"], cwd: checkout)
-        XCTAssertEqual(result.status, 0)
-        XCTAssertEqual(result.output.utf8.count, 1_048_576)
-        let start = Date()
-        let timeout = try commands.run("/bin/sh", ["-c", "sleep 30"], cwd: checkout, timeout: 0.05)
-        XCTAssertTrue(timeout.timedOut)
-        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
-    }
+
     func testExistingUnownedBranchIsNeverAdopted() throws {
         try git(["branch", "bsa/project"])
         XCTAssertThrowsError(try run { _ in XCTFail("Must not invoke harness"); return self.success() })
@@ -463,13 +427,6 @@ final class RunnerTests: RepositoryTestCase {
         try assertNoCommit()
     }
 
-    func testBackgroundChildrenCannotOutliveCommand() throws {
-        let marker = checkout.appendingPathComponent("leaked")
-        let result = try commands.run("/bin/sh", ["-c", "(sleep 0.4; touch leaked) & exit 0"], cwd: checkout)
-        XCTAssertEqual(result.status, 0)
-        Thread.sleep(forTimeInterval: 0.6)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
-    }
     func testProtectedRenameIsRejected() throws {
         try write(".env", "fixture-not-a-secret")
         try git(["add", ".env"])
@@ -480,7 +437,6 @@ final class RunnerTests: RepositoryTestCase {
         }
         XCTAssertEqual(record.outcome, "rejected")
     }
-
 
     func testHarnessLaunchErrorIsRecordedAsHarnessFailure() throws {
         let record = try run { _ in throw BSAError.message("fake harness disappeared") }

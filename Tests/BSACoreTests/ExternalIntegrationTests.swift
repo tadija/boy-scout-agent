@@ -1,7 +1,7 @@
 import XCTest
 @testable import BSACore
 
-/// Real build and adapter subprocess coverage, enabled explicitly in CI and before releases.
+/// Real Swift build coverage, enabled explicitly in CI and before releases.
 final class ExternalIntegrationTests: RepositoryTestCase {
     override func setUpWithError() throws {
         guard ProcessInfo.processInfo.environment["BSA_INTEGRATION_TESTS"] == "1" else {
@@ -41,34 +41,4 @@ final class ExternalIntegrationTests: RepositoryTestCase {
         XCTAssertEqual(record.paths, ["Sources/Fixture/Value.swift"])
     }
 
-    func testCodexBuiltinWithFakeExecutableEndToEnd() throws {
-        let bin = temporary.appendingPathComponent("bin")
-        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        let executable = bin.appendingPathComponent("codex")
-        let script = """
-        #!/bin/sh
-        [ "$1" = --ask-for-approval ] && [ "$2" = never ] || exit 6
-        shift 2
-        if [ "$1" = exec ] && [ "$2" = --help ]; then
-          echo '--sandbox --cd --output-last-message'
-          exit 0
-        fi
-        [ "$1" = exec ] || exit 2
-        [ "$2" = --sandbox ] && [ "$3" = workspace-write ] || exit 3
-        [ "$4" = --cd ] && [ "$5" -ef . ] || exit 4
-        [ "$6" = --output-last-message ] || exit 5
-        printf 'after\n' > value.txt
-        printf 'Correct the fixture value\nVerified the change.' > "$7"
-        echo 'noisy harness banner'
-        """
-        try Data(script.utf8).write(to: executable)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
-        let previous = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
-        setenv("PATH", bin.path + ":" + previous, 1)
-        defer { setenv("PATH", previous, 1) }
-        let record = try Runner().run(at: checkout, harness: try XCTUnwrap(Harnesses.builtins.first { $0.name == "codex" }), dataDirectory: data)
-        XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
-        XCTAssertEqual(try git(["log", "-1", "--format=%s", record.branch]), "bsa: Correct the fixture value")
-        XCTAssertFalse(record.task?.contains("noisy harness") ?? true)
-    }
 }

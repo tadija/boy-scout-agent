@@ -8,9 +8,9 @@ let package = Package(
     targets: [
         .target(name: "ProcessSupport"),
         .target(name: "BSACore", dependencies: ["ProcessSupport"], plugins: ["EmbedMission"]),
-        .executableTarget(name: "MissionGenerator"),
-        .plugin(name: "EmbedMission", capability: .buildTool(), dependencies: ["MissionGenerator"]),
-        .executableTarget(name: "bsa", dependencies: ["BSACore"]),
+        .plugin(name: "EmbedMission", capability: .buildTool()),
+        .plugin(name: "BuildVersion", capability: .buildTool()),
+        .executableTarget(name: "bsa", dependencies: ["BSACore"], plugins: ["BuildVersion"]),
         .testTarget(name: "BSACoreTests", dependencies: ["BSACore"])
     ]
 )

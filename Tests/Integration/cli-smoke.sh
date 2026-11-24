@@ -36,7 +36,8 @@ export PATH="$fixture/bin:$PATH"
 export XDG_DATA_HOME="$fixture/data"
 export XDG_CONFIG_HOME="$fixture/config-home"
 cd "$fixture"
-[ "$("$bsa" --version)" = "Boy Scout Agent 0.2.0" ]
+"$bsa" --version > "$fixture/version"
+grep -Eq '^Boy Scout Agent [0-9]+\.[0-9]+\.[0-9]+[^ ]* \(([0-9a-f]{7}|unknown)\)$' "$fixture/version"
 if "$bsa" --version extra > "$fixture/invalid-version" 2>&1; then exit 1; fi
 cd "$fixture/project"
 "$bsa" init > "$fixture/init"

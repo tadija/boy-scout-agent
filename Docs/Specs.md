@@ -42,7 +42,7 @@ Use Swift concurrency and Foundation/Process where practical. Avoid a mandatory 
 
 ### Mission boundary (architectural extraction Stage 1)
 
-`prompt.md` is the canonical Boy Scout mission. The dependency-free `EmbedMission` SwiftPM build tool plugin invokes `MissionGenerator` with declared Markdown input and generated Swift output dependencies. It emits deterministic UTF-8 byte literals, preserving exact file contents without runtime resources, timestamps, absolute paths, or string escaping assumptions. Changes to Markdown or the generator trigger regeneration.
+`prompt.md` is the canonical Boy Scout mission. The dependency-free `EmbedMission` SwiftPM build tool plugin invokes `Scripts/embed-mission.swift` with declared Markdown and generator-source inputs and generated Swift output dependencies. It emits deterministic UTF-8 byte literals, preserving exact file contents without runtime resources, timestamps, absolute paths, or string escaping assumptions. Changes to Markdown or the generator trigger regeneration.
 
 An internal `AgentDefinition` holds product identity, executable name, embedded mission, commit identity, branch/state namespaces and the default consecutive-no-candidate limit. Configuration retains `saturationLimit` and all existing defaults. The runner handles generic consecutive no-op stopping, with no mission priority text.
 
