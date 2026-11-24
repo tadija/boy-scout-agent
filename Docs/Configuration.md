@@ -213,6 +213,10 @@ To keep your Git identity for every run, set `"commitIdentity": "git"` in your r
 
 ## Mission Markdown
 
+The canonical Boy Scout mission lives in [prompt.md](../prompt.md). SwiftPM embeds its exact UTF-8 contents in the executable at build time; installed BSA needs no Markdown file or resource bundle. `--prompt PATH` replaces the mission for one run. The `prompt` setting in `bsa.json` (or global configuration) provides a persistent override. CLI paths resolve from the invocation directory; configured paths resolve from the repository root. Missing, unreadable, invalid UTF-8, or empty explicit missions fail rather than falling back.
+
+The engine composes a mandatory execution contract, the mission, and separate project instructions and recent history. `--instructions` remains additional guidance. A mission override cannot disable Git isolation, protected paths, verification, or commit ownership. `bsa config --prompt` previews the configured composition. The public `AgentDefinition` supplies identity, mission, namespaces, and the default stop policy. BSA is a thin consumer of the reusable `SwiftAgent` engine and `SwiftAgentCLI` command implementation.
+
 Prompt precedence is CLI `--prompt PATH`, repository `prompt`, global `prompt`, then the embedded [Boy Scout mission](../prompt.md). A repository `null` clears a global override. Files are read before execution and the resolved mission stays fixed for the session. Runtime worktrees never change path resolution. The engine contract and runtime history are composed separately and remain present for every harness, including Ollama. Additional `instructions` do not replace the mission or contract.
 
 `bsa config --prompt` retains its existing meaning: preview the configured full prompt without invoking a harness. It takes no path argument; `bsa run --prompt PATH` selects a mission file.

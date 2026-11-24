@@ -1,137 +1,124 @@
 # Boy Scout Agent
 
-> "Leave your codebase a little better than you found it."  
+> "Leave your codebase a little better than you found it."
 
-Boy Scout Agent (`bsa`) asks a coding agent to find one worthwhile improvement, checks its work, and gives you a local Git commit to review. You can run it once or give it a few more turns.
+Boy Scout Agent (`bsa`) asks a coding agent to find one worthwhile improvement,
+checks its work, and gives you a local Git commit to review.
+Run it once or let it work through a few improvements.
 
 ## Install
 
-Build with Swift 6 or later on macOS or Linux. Install Git and, for external harnesses, install and sign in to your chosen coding agent CLI. BSA looks for Codex, Claude Code, Pi, OpenCode, Gemini. It also includes a standalone [Ollama agent](Docs/Configuration.md#ollama) for inference through your Ollama server; no external agent CLI is needed for Ollama.
+Requires Swift 6+, Git, and macOS or Linux. Install and sign in to a supported
+agent CLI: Codex, Claude Code, Pi, OpenCode, or Gemini.
+You can also use [Ollama](Docs/Configuration.md#ollama) without an external agent CLI.
+
+From a checkout of this repository:
 
 ```sh
 ./Scripts/install.sh
 export PATH="$HOME/.local/bin:$PATH"
-bsa --version                     # Boy Scout Agent 0.2.1 (<short commit hash>)
+bsa --version
 ```
 
-`VERSION` is the release version source. A SwiftPM plugin runs the Swift metadata
-generator at build time to embed that version and the first seven characters of
-Git HEAD. The build command declares the version file, generator script and Git metadata as inputs, so incremental builds refresh metadata on source and revision changes. Installed binaries report their build without Git or a checkout. Builds
-from source archives without Git metadata report `unknown` for the build.
+To update later, run `bsa update`. See [installation and updates](Docs/Installation.md)
+for custom install paths, build metadata, and update behavior.
 
-To install into a different directory, run `./Scripts/install.sh /path/to/bin`.
-The script builds a release executable and replaces any existing BSA installation
-only after a successful build.
+## Try it on your project
 
-Update an installed BSA from any directory:
+Open a trusted Git repository with at least one commit:
 
 ```sh
-bsa update
-```
-
-This downloads the latest `main` source from `https://github.com/tadija/boy-scout-agent`,
-builds it with your local Swift toolchain, and replaces the executable you invoked
-(resolving symlinks). Git, Swift 6 or later, network access, and write access to the
-installation directory are required. This installs the current development branch,
-which may report the same release version as your existing installation; the build
-hash identifies its source commit. A failed build leaves your installed executable intact. Local source checkouts are unaffected.
-You can also update your checkout and rerun `./Scripts/install.sh`.
-
-## Run on any project
-
-Open a trusted repository with at least one commit. Swift packages use `swift test` automatically. For other projects, configure verification commands or explicitly set `verification` to `[]` to skip project checks. Run `bsa init` to generate `bsa.json` with all built-in defaults, then edit it for your project. See [repository configuration](Docs/Configuration.md) for Swift, Rust, and TypeScript baseline/verification examples.
-
-```sh
+cd ~/Projects/my-app
 bsa run
 bsa status
 ```
 
-BSA starts from your current commit, runs the baseline checks and gives the agent a detached worktree. Your local edits stay in your checkout. BSA inspects the diff and runs verification again against the proposed contents in a fresh worktree. Each accepted improvement adds one commit to the local BSA branch. You decide what to merge or push (use the branch name printed by BSA in these commands).
+Swift packages use `swift test` automatically. For other projects, create a
+`bsa.json` with your checks. For example, in a Python project:
 
-```sh
-git diff HEAD...bsa/my-project
-git merge bsa/my-project
+```json
+{
+  "verification": ["python3 -m unittest discover -s tests"]
+}
 ```
 
-## Run options
+Checks run before the agent starts and again in a fresh worktree for its proposed
+change. Include dependency setup if your checks need it. See
+[configuration examples](Docs/Configuration.md#baseline-and-verification) for
+Swift, Rust, and TypeScript, or use `bsa init` to generate all defaults.
 
-To continue from an existing target branch, explicitly adopt it with `--force`. BSA adds improvements on top of its current tip, preserving existing commits. The target must be unchecked out. See [branch recovery](Docs/Operations.md) for details.
+BSA works in a detached Git worktree, leaving your local edits in place.
+Each accepted improvement becomes a commit on a local `bsa/<project>` branch.
+Review and merge using the branch name BSA prints:
 
 ```sh
-bsa run --branch bsa/my-improvements --force
+# Example for a project named my-app
+git diff HEAD...bsa/my-app
+git merge bsa/my-app
 ```
 
-Commits use `Boy Scout Agent <boy-scout-agent@localhost>` by default. Choose your configured Git identity or a custom one:
+BSA leaves merging and pushing to you by default. Agent tools and check commands
+run with your account's permissions, so use trusted repositories and commands.
+
+## Everyday examples
+
+Focus a run on a specific concern:
 
 ```sh
-bsa run --identity git
-bsa run --identity "Name <email>"
+bsa run --instructions "Improve error messages in the CSV importer; preserve public APIs."
 ```
 
-Save the preference as `commitIdentity` in [BSA configuration](Docs/Configuration.md).
-
-For a longer run, set an iteration limit and optionally choose the agent.
+Try up to five improvements with your preferred agent:
 
 ```sh
-bsa run --count 10 --harness claude
-bsa run --harness claude --yolo
-bsa run --harness gemini --yolo
-bsa run --harness ollama --ollama-host http://192.168.1.50:11434 --ollama-model my-coding-model
-bsa run --instructions "Focus on error handling; preserve public APIs."
-bsa run --prompt ./my-mission.md
-bsa run --count 5 --harness codex --branch bsa/polish
+bsa run --count 5 --harness claude
+```
+
+Give a longer run a time limit, then inspect its results:
+
+```sh
 bsa run --count 100 --duration 4h
+bsa history
 ```
 
-`--yolo` selects the harness's permissive execution mode. See [harness permissions](Docs/Configuration.md#permissive-harness-mode) for each agent's behavior; BSA's Git and verification guards still apply.
+Use your configured Git identity and a named review branch:
 
-BSA reports the current phase on stderr and prints total and per-phase timings after each iteration. `bsa status` also shows the active phase. Timings include baseline checks, harness work, and independent verification; by default, checks run twice, and fresh worktrees may require fresh builds. Configure `baseline` and `verification` separately, or set either to `[]` to skip its commands. For one run, use `--skip-checks` to skip both phases.
+```sh
+bsa run --identity git --branch bsa/importer-cleanup
+```
 
-BSA starts each iteration with a fresh agent and recent run history. Run it again to continue improving the same branch.
+Replace the default [Boy Scout mission](prompt.md) with your own Markdown file:
 
-## Mission and execution
+```sh
+bsa run --prompt ./missions/improve-docs.md --count 3
+```
 
-The canonical Boy Scout mission lives in [prompt.md](prompt.md). SwiftPM embeds its exact UTF-8 contents in the executable at build time; installed BSA needs no Markdown file or resource bundle. `--prompt PATH` replaces the mission for one run. The `prompt` setting in `bsa.json` (or global configuration) provides a persistent override. CLI paths resolve from the invocation directory; configured paths resolve from the repository root. Missing, unreadable, invalid UTF-8, or empty explicit missions fail rather than falling back.
+Run `bsa run` again to continue the same branch. Each iteration starts a fresh
+agent with recent run history. BSA may stop early after repeated empty attempts
+or failures. See [operations](Docs/Operations.md) for stopping runs, schedules,
+and adopting existing branches with `--force`.
 
-The engine composes a mandatory execution contract, the mission, and separate project instructions and recent history. `--instructions` remains additional guidance. A mission override cannot disable Git isolation, protected paths, verification, or commit ownership. `bsa config --prompt` previews the configured composition. The public `AgentDefinition` supplies identity, mission, namespaces, and the default stop policy. BSA is a thin consumer of the reusable `SwiftAgent` engine and `SwiftAgentCLI` command implementation.
+## Build your own agent
 
-## SwiftAgent libraries and generic CLI
-
-This repository also contains **SwiftAgent**: a harness-agnostic Swift framework for autonomous, iterative repository agents. Stage 2 establishes the reusable package products here; independent repository extraction is reserved for Stage 3.
+The reusable `SwiftAgent` and `SwiftAgentCLI` libraries power BSA. The generic
+`swift-agent` executable runs your own mission:
 
 ```sh
 ./Scripts/install.sh --product swift-agent
-swift-agent run --prompt /path/to/mission.md --count 5 --duration 1h --harness codex
+swift-agent run --prompt ./Examples/documentation.md --count 3
 ```
 
-The generic CLI requires a mission via `--prompt PATH` or the `prompt` configuration setting. It never falls back to the Boy Scout mission. It uses `swift-agent.json`, `~/.config/swift-agent/config.json`, `~/.local/share/swift-agent`, and `swift-agent/<project>` branches. BSA keeps its existing configuration, history, branches, installer default, and self-update behavior. Generic self-update has no upstream destination yet; rebuild with the installer.
-
-For a documentation agent, use [the example mission](Examples/documentation.md):
-
-```sh
-swift-agent run --prompt /path/to/boy-scout-agent/Examples/documentation.md --count 3
-```
-
-Swift packages can depend on the `SwiftAgent` and `SwiftAgentCLI` library products. A specialized executable needs only an agent definition and a call to the shared CLI:
-
-```swift
-import SwiftAgent
-import SwiftAgentCLI
-
-let agent = AgentDefinition(name: "Documentation Agent", executableName: "doc-agent",
-                            mission: "Improve one missing or incorrect usage example.")
-let status = AgentCLI.run(agent: agent)
-// Pass status to exit() in your executable entry point.
-```
-
-See [the package architecture and public API](Docs/SwiftAgent.md) for SwiftPM integration, programmatic execution, module ownership, embedding, and current execution constraints.
+See [SwiftAgent](Docs/SwiftAgent.md) for library integration, custom executables,
+and generic CLI configuration.
 
 ## Documentation
 
-- [Repository configuration](Docs/Configuration.md) covers verification commands, harness selection, protected paths, and run limits.
-- [Operations guide](Docs/Operations.md) covers overnight runs, recurring schedules, history, and recovery.
-- [Testing guide](Docs/Tests.md) covers core tests, external integration tests, and CLI smoke tests.
-- [Specification](Docs/Specs.md) describes the iteration lifecycle, verification contract, and three development prompts.
+- [Installation and updates](Docs/Installation.md) — requirements, install paths, and versioning.
+- [Configuration](Docs/Configuration.md) — checks, agents, Ollama, permissions, and missions.
+- [Operations](Docs/Operations.md) — history, overnight runs, schedules, and recovery.
+- [SwiftAgent](Docs/SwiftAgent.md) — generic CLI, Swift libraries, and architecture.
+- [Testing](Docs/Tests.md) — core tests, integration tests, and CLI smoke tests.
+- [Specification](Docs/Specs.md) — iteration lifecycle and verification contract.
 
 ---
 

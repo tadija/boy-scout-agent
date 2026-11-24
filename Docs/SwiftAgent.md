@@ -2,6 +2,35 @@
 
 SwiftAgent is a harness-agnostic Swift framework for autonomous, iterative repository agents. It remains inside the Boy Scout Agent repository for architectural extraction Stage 2.
 
+## Install and run the generic CLI
+
+This repository also contains **SwiftAgent**: a harness-agnostic Swift framework for autonomous, iterative repository agents. Stage 2 establishes the reusable package products here; independent repository extraction is reserved for Stage 3.
+
+```sh
+./Scripts/install.sh --product swift-agent
+swift-agent run --prompt /path/to/mission.md --count 5 --duration 1h --harness codex
+```
+
+The generic CLI requires a mission via `--prompt PATH` or the `prompt` configuration setting. It never falls back to the Boy Scout mission. It uses `swift-agent.json`, `~/.config/swift-agent/config.json`, `~/.local/share/swift-agent`, and `swift-agent/<project>` branches. BSA keeps its existing configuration, history, branches, installer default, and self-update behavior. Generic self-update has no upstream destination yet; rebuild with the installer.
+
+For a documentation agent, use [the example mission](../Examples/documentation.md):
+
+```sh
+swift-agent run --prompt /path/to/boy-scout-agent/Examples/documentation.md --count 3
+```
+
+Swift packages can depend on the `SwiftAgent` and `SwiftAgentCLI` library products. A specialized executable needs only an agent definition and a call to the shared CLI:
+
+```swift
+import SwiftAgent
+import SwiftAgentCLI
+
+let agent = AgentDefinition(name: "Documentation Agent", executableName: "doc-agent",
+                            mission: "Improve one missing or incorrect usage example.")
+let status = AgentCLI.run(agent: agent)
+// Pass status to exit() in your executable entry point.
+```
+
 ## Products and ownership
 
 ```text
