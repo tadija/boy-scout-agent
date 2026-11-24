@@ -27,7 +27,11 @@ The goal is sustained, measurable codebase quality improvement, not maximizing c
 
 ## 3. Architecture
 
-A single Swift executable organized into testable modules (the architectural extraction Stage 1 retains `BSACore` and `bsa`; reusable libraries and a generic CLI are deferred to Stage 2):
+The package exports reusable `SwiftAgent` and `SwiftAgentCLI` libraries and two self-contained executables, `bsa` and `swift-agent`. Architectural extraction Stage 2 is complete within this repository. Stage 3 will move the generic products upstream; no remote dependency has been introduced.
+
+`SwiftAgent` depends only on Foundation/platform facilities and internal C `ProcessSupport`. It owns configuration, harness adapters (including Ollama), process execution, Git isolation, verification, commits, iteration/session lifecycle, history, recovery, execution windows, and schedule generation. It imports neither CLI nor BSA. `SwiftAgentCLI` depends on `SwiftAgent` and owns argument parsing, terminal output, and exit-status selection. Executable entry points terminate their processes. `BoyScoutAgent` supplies BSA's definition, embedded mission, and product-specific updater; `bsa` wires these into the shared CLI. `swift-agent` supplies a generic definition with no default mission. See [SwiftAgent package API](SwiftAgent.md).
+
+The mechanisms retain the existing boundaries:
 - **CLI:** argument parsing, output, exit statuses.
 - **Config:** defaults, repository config, CLI overrides, validation.
 - **Git:** repository detection, branch/worktree lifecycle, diff inspection, commit creation.
@@ -40,15 +44,15 @@ A single Swift executable organized into testable modules (the architectural ext
 
 Use Swift concurrency and Foundation/Process where practical. Avoid a mandatory database and network daemon. Prefer JSON files for operational records; do not store mutable BSA state in the target repository by default.
 
-### Mission boundary (architectural extraction Stage 1)
+### Mission boundary (established in architectural extraction Stage 1)
 
 `prompt.md` is the canonical Boy Scout mission. The dependency-free `EmbedMission` SwiftPM build tool plugin invokes `Scripts/embed-mission.swift` with declared Markdown and generator-source inputs and generated Swift output dependencies. It emits deterministic UTF-8 byte literals, preserving exact file contents without runtime resources, timestamps, absolute paths, or string escaping assumptions. Changes to Markdown or the generator trigger regeneration.
 
-An internal `AgentDefinition` holds product identity, executable name, embedded mission, commit identity, branch/state namespaces and the default consecutive-no-candidate limit. Configuration retains `saturationLimit` and all existing defaults. The runner handles generic consecutive no-op stopping, with no mission priority text.
+A public `AgentDefinition` holds product identity, executable name, embedded mission, commit identity, branch/state namespaces and the default consecutive-no-candidate limit. Configuration retains `saturationLimit` and all existing defaults. The runner handles generic consecutive no-op stopping, with no mission priority text.
 
 `Planner` composes an engine-owned execution contract, resolved mission Markdown, project guidance and bounded per-branch history. Harness adapters transport this same prompt; the native Ollama system message contains only tool-loop guidance. Mandatory protocol instructions remain independent of overrides. Git isolation, ref integrity, diff protection, independent verification and commit publication remain authoritative code gates. Prompts are guidance rather than a filesystem sandbox or proof of semantic safety.
 
-`bsa run --prompt PATH` overrides repository/global `prompt`, which overrides the embedded default. CLI relative paths use the invocation directory; configuration paths (including global config) use the original repository root. Repository `null` resets a global override. Explicit missing, unreadable, non-UTF-8 or whitespace-only prompts fail before harness execution. The mission is read once per session. `instructions` remains separate project guidance. `bsa config --prompt` previews the resolved configuration and history. No state migration, target rename, generic CLI, or public framework API is introduced in this stage.
+`bsa run --prompt PATH` overrides repository/global `prompt`, which overrides the embedded default. CLI relative paths use the invocation directory; configuration paths (including global config) use the original repository root. Repository `null` resets a global override. Explicit missing, unreadable, non-UTF-8 or whitespace-only prompts fail before harness execution. The mission is read once per session. `instructions` remains separate project guidance. `bsa config --prompt` previews the resolved configuration and history. Stage 2 retains these semantics while adding public library products and the generic CLI; no BSA state migration is required.
 
 ## 4. Core concepts
 
@@ -159,9 +163,9 @@ bsa doctor                      # Git, harness, and verification diagnostics
 
 Zero-config `bsa run` should work in a clean Git repository with an installed supported harness. Detect harness deterministically; if multiple are available, use a documented precedence and report the choice. Do not guess project-specific build commands unsafely: infer well-known build/test commands where reliable, otherwise prompt once or use conservative static/diff verification and clearly label reduced confidence.
 
-Optional repository file `bsa.yaml` (YAML parser dependency only if justified; otherwise consider JSON or TOML for minimal dependencies). Global config may live under the platform's XDG-compatible config directory. CLI overrides config; repo config overrides global config; defaults are lowest priority. Config validation must report unknown keys and bad values.
+Optional repository file `bsa.json` (JSON; no parser dependency). Global config may live under the platform's XDG-compatible config directory. CLI overrides config; repo config overrides global config; defaults are lowest priority. Config validation must report unknown keys and bad values.
 
-Illustrative schema (final syntax can be adjusted during implementation):
+Historical illustrative schema below uses YAML notation; the implemented JSON keys and defaults are specified in [Configuration](Configuration.md).
 
 ```yaml
 harness: codex
@@ -225,7 +229,11 @@ If no executable project checks can be determined, do not pretend the change is 
 - Git lifecycle tests cover clean/dirty checkout, branch divergence, empty diff, rejected diff, verification failure, cancellation, and crash recovery.
 - README contains installation, quick start, safety model, CLI examples, config reference, scheduling setup, and troubleshooting.
 
-## 15. Suggested implementation stages
+## 15. Historical product implementation stages
+
+These original product milestones are distinct from the three architectural extraction stages in `Docs/Plan`. The reusable-package extraction in Stage 2 does not add the features described below; those features already exist.
+
+### Original milestones
 
 **Stage 1 — Reliable core:** Swift package, CLI, Git worktrees, one harness adapter plus fake harness, single iteration state machine, one-commit invariant, verification, persistence, tests.
 

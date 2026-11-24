@@ -1,5 +1,6 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+
 
 final class OperationsTests: XCTestCase {
     func testDurationValidation() throws {

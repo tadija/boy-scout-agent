@@ -105,3 +105,9 @@ repository output. No dashboard, database or background BSA daemon is required.
 
 Cancellation and timeout preserve dirty implementation worktrees. The iteration
 record includes the path when Git refuses to remove one.
+
+## Shared engine operations
+
+`swift-agent` provides the same run, status, history, stop, doctor, and schedule commands with its own namespace. Its schedule files live under `$XDG_DATA_HOME/swift-agent/schedules`; Linux units use `swift-agent-ID.service` and `.timer`, and macOS labels use `local.swift-agent.ID`. Configure `prompt` in `swift-agent.json` before scheduling, since wrappers reload configuration rather than capture a one-run prompt override. `swift-agent update` reports that self-update is unavailable until an upstream source is established.
+
+Locks and stop markers use the supplied state namespace inside Git's common directory, preserving `bsa.lock` and `bsa.stop`. The existing same-agent exclusion across branches, linked worktrees, and alternate data directories remains. Different agent namespaces have separate history and cancellation files; simultaneous runs can still fail the repository-ref integrity guard when another agent publishes. Run agents sequentially against the same repository.

@@ -1,12 +1,13 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+import BoyScoutAgent
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
 
 final class OllamaTests: RepositoryTestCase {
     func testAgentEditsThroughToolsAndRunnerVerifiesCommit() throws {
-        var configuration = Configuration()
+        var configuration = Configuration(agent: .boyScout)
         configuration.ollamaModel = "fixture"
         configuration.ollamaHost = "http://192.168.1.50:11434"
         configuration.verification = ["test \"$(cat value.txt)\" = after"]
@@ -33,7 +34,7 @@ final class OllamaTests: RepositoryTestCase {
                 return self.reply(content: "Correct fixture value\nVerified via BSA.")
             }
         }
-        let record = try Runner().run(at: checkout, configuration: configuration, harness: adapter, dataDirectory: data)
+        let record = try Runner(agent: .boyScout).run(at: checkout, configuration: configuration, harness: adapter, dataDirectory: data)
         XCTAssertEqual(record.outcome, "committed", record.detail ?? "")
         XCTAssertEqual(record.checks.first?.status, 0)
         XCTAssertEqual(try git(["show", record.branch + ":value.txt"]), "after")
@@ -41,7 +42,7 @@ final class OllamaTests: RepositoryTestCase {
     }
 
     func testToolsRejectTraversalSymlinksSecretsAndProtectedWrites() throws {
-        let tools = OllamaTools(root: checkout, protectedPaths: ["value.txt"], deadline: ProcessInfo.processInfo.systemUptime + 10)
+        let tools = OllamaTools(root: checkout, protectedPaths: ["value.txt", "bsa.json"], deadline: ProcessInfo.processInfo.systemUptime + 10)
         let outside = temporary.appendingPathComponent("outside.txt")
         try Data("outside".utf8).write(to: outside)
         try FileManager.default.createSymbolicLink(at: checkout.appendingPathComponent("link"), withDestinationURL: temporary)
@@ -78,7 +79,7 @@ final class OllamaTests: RepositoryTestCase {
     }
 
     func testModelErrorsTurnLimitAndMalformedMessagesCannotProduceCommit() throws {
-        var configuration = Configuration()
+        var configuration = Configuration(agent: .boyScout)
         configuration.ollamaModel = "fixture"
         configuration.ollamaMaxTurns = 1
         var adapter = OllamaAdapter(configuration: configuration)
@@ -94,7 +95,7 @@ final class OllamaTests: RepositoryTestCase {
     }
 
     func testUnfinishedAgentCannotPublishPartialEdits() throws {
-        var configuration = Configuration()
+        var configuration = Configuration(agent: .boyScout)
         configuration.ollamaModel = "fixture"
         configuration.ollamaMaxTurns = 1
         configuration.verification = []
@@ -103,14 +104,14 @@ final class OllamaTests: RepositoryTestCase {
             if endpoint == "api/show" { return ["capabilities": ["tools"]] }
             return self.reply(calls: [self.call("write_file", ["path": "value.txt", "content": "partial edit"])])
         }
-        let record = try Runner().run(at: checkout, configuration: configuration, harness: adapter, dataDirectory: data)
+        let record = try Runner(agent: .boyScout).run(at: checkout, configuration: configuration, harness: adapter, dataDirectory: data)
         XCTAssertEqual(record.outcome, "harness_failed")
         try assertNoCommit()
         XCTAssertEqual(try String(contentsOf: checkout.appendingPathComponent("value.txt"), encoding: .utf8), "before\n")
     }
 
     func testToolErrorsAreReturnedToModelAndCanBeCorrected() throws {
-        var configuration = Configuration()
+        var configuration = Configuration(agent: .boyScout)
         configuration.ollamaModel = "fixture"
         var adapter = OllamaAdapter(configuration: configuration)
         var turn = 0
@@ -125,7 +126,7 @@ final class OllamaTests: RepositoryTestCase {
     }
 
     func testTimeoutAndCancellationStopAgentTools() throws {
-        var configuration = Configuration()
+        var configuration = Configuration(agent: .boyScout)
         configuration.ollamaModel = "fixture"
         var adapter = OllamaAdapter(configuration: configuration)
         adapter.request = { _, _, _ in XCTFail("Should stop before HTTP request"); return [:] }

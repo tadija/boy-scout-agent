@@ -1,5 +1,6 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+
 
 final class ProcessTests: XCTestCase {
     private var directory: URL!

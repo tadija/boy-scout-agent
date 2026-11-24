@@ -6,7 +6,7 @@ import Glibc
 import Darwin
 #endif
 
-public enum BSAError: Error, CustomStringConvertible {
+public enum AgentError: Error, CustomStringConvertible {
     case message(String)
     public var description: String { switch self { case .message(let value): return value } }
 }
@@ -27,8 +27,15 @@ public struct CommandResult {
     public let status: Int32
     public let output: String
     public let timedOut: Bool
-    var outputTruncated = false
-    var outputIsUTF8 = true
+    public let outputTruncated: Bool
+    public let outputIsUTF8: Bool
+    public init(status: Int32, output: String, timedOut: Bool, outputTruncated: Bool = false, outputIsUTF8: Bool = true) {
+        self.status = status
+        self.output = output
+        self.timedOut = timedOut
+        self.outputTruncated = outputTruncated
+        self.outputIsUTF8 = outputIsUTF8
+    }
 }
 
 /// Files rather than pipes avoid deadlocks when a child produces large output.
@@ -39,12 +46,12 @@ public final class CommandRunner {
                     cancellable: Bool = true) throws -> CommandResult {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         guard FileManager.default.createFile(atPath: temporary.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
-            throw BSAError.message("Cannot create command log")
+            throw AgentError.message("Cannot create command log")
         }
         let output = try FileHandle(forWritingTo: temporary)
         defer { try? output.close(); try? FileManager.default.removeItem(at: temporary) }
         let input = open("/dev/null", O_RDONLY | O_CLOEXEC)
-        guard input >= 0 else { throw BSAError.message("Cannot open /dev/null") }
+        guard input >= 0 else { throw AgentError.message("Cannot open /dev/null") }
         defer { close(input) }
         let inherited = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
         let environmentValues = inherited.merging(environment) { _, new in new }.map { "\($0.key)=\($0.value)" }
@@ -60,7 +67,7 @@ public final class CommandRunner {
                 bsa_spawn(executable, argv.baseAddress!, envp.baseAddress!, cwd.path, input, output.fileDescriptor, &pid)
             }
         }
-        guard spawnResult == 0 else { throw BSAError.message("Cannot launch \(executable): \(String(cString: strerror(spawnResult)))") }
+        guard spawnResult == 0 else { throw AgentError.message("Cannot launch \(executable): \(String(cString: strerror(spawnResult)))") }
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         var expired = false
         var status: Int32 = 0
@@ -70,7 +77,7 @@ public final class CommandRunner {
             if waited == pid { break }
             if waited == -1 {
                 if errno == EINTR { continue }
-                throw BSAError.message("Cannot wait for child process")
+                throw AgentError.message("Cannot wait for child process")
             }
             if ProcessInfo.processInfo.systemUptime >= deadline || (cancellable && Cancellation.shouldStop) {
                 expired = ProcessInfo.processInfo.systemUptime >= deadline

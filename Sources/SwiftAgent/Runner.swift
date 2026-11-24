@@ -7,13 +7,15 @@ import Darwin
 
 public final class Runner {
     private let commands = CommandRunner()
-    public init() {}
+    public let agent: AgentDefinition
+    public init(agent: AgentDefinition = .generic) { self.agent = agent }
 
     public func prompt(at directory: URL, configuration: Configuration? = nil, dataDirectory: URL? = nil) throws -> String {
         let repo = try Repository(at: directory)
-        let config = try configuration ?? Configuration.load(repository: repo)
-        let mission = try config.mission(repository: repo)
-        let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
+        var config = try configuration ?? Configuration.load(repository: repo, agent: agent)
+        config.protectedPaths.append(agent.executableName + ".json")
+        let mission = try config.mission(repository: repo, agent: agent)
+        let store = try StateStore(repository: repo, dataDirectory: dataDirectory, agent: agent)
         let recent = try store.recent(branch: targetBranch(configuration: config, repository: repo))
         return Planner.prompt(mission: mission, instructions: config.instructions, recent: recent)
     }
@@ -22,27 +24,27 @@ public final class Runner {
         let slug = repository.root.lastPathComponent.lowercased().map {
             $0.isASCII && ($0.isLetter || $0.isNumber) ? String($0) : "-"
         }.joined()
-        return configuration.branch ?? "\(AgentDefinition.boyScout.branchNamespace)/\(slug)"
+        return configuration.branch ?? "\(agent.branchNamespace)/\(slug)"
     }
 
     public func status(at directory: URL, dataDirectory: URL? = nil) throws -> Record? {
-        try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory).latest
+        try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory, agent: agent).latest
     }
 
     public func stop(at directory: URL) throws {
         let repo = try Repository(at: directory)
         do {
-            let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".lock"))
+            let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent(agent.stateNamespace + ".lock"))
             lock.release()
-            throw BSAError.message("No active BSA run for this repository")
-        } catch let error as BSAError {
-            guard error.description.contains("Another BSA run") else { throw error }
+            throw AgentError.message("No active agent run for this repository")
+        } catch let error as AgentError {
+            guard error.description.contains("Another agent run") else { throw error }
         }
-        try Data().write(to: repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".stop"), options: .atomic)
+        try Data().write(to: repo.commonDirectory.appendingPathComponent(agent.stateNamespace + ".stop"), options: .atomic)
     }
 
     public func history(at directory: URL, dataDirectory: URL? = nil) throws -> [Record] {
-        let store = try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory)
+        let store = try StateStore(repository: Repository(at: directory), dataDirectory: dataDirectory, agent: agent)
         return try FileManager.default.contentsOfDirectory(at: store.directory, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" && !["latest.json", "branches.json"].contains($0.lastPathComponent) }
             .map { try JSONDecoder().decode(Record.self, from: Data(contentsOf: $0)) }
@@ -53,11 +55,13 @@ public final class Runner {
                            dataDirectory: URL? = nil, deadline: Date? = nil, force: Bool = false, skipChecks: Bool = false, onProgress: (String) -> Void = { _ in }, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
         try configuration.validate()
         let repo = try Repository(at: directory)
-        let mission = try configuration.mission(repository: repo)
-        let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".lock"))
+        var configuration = configuration
+        configuration.protectedPaths.append(agent.executableName + ".json")
+        let mission = try configuration.mission(repository: repo, agent: agent)
+        let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent(agent.stateNamespace + ".lock"))
         defer { sessionLock.release() }
-        let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
-        let stop = repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".stop")
+        let store = try StateStore(repository: repo, dataDirectory: dataDirectory, agent: agent)
+        let stop = repo.commonDirectory.appendingPathComponent(agent.stateNamespace + ".stop")
         try? FileManager.default.removeItem(at: stop)
         Cancellation.stopFile = stop
         defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
@@ -83,14 +87,15 @@ public final class Runner {
     public func run(at directory: URL, configuration: Configuration? = nil,
                     harness: HarnessAdapter = Harnesses.builtins[0], dataDirectory: URL? = nil, force: Bool = false, skipChecks: Bool = false, onProgress: (String) -> Void = { _ in }) throws -> Record {
         let repo = try Repository(at: directory)
-        let config = try configuration ?? Configuration.load(repository: repo)
+        var config = try configuration ?? Configuration.load(repository: repo, agent: agent)
+        config.protectedPaths.append(agent.executableName + ".json")
         try config.validate()
-        let mission = try config.mission(repository: repo)
-        let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
+        let mission = try config.mission(repository: repo, agent: agent)
+        let store = try StateStore(repository: repo, dataDirectory: dataDirectory, agent: agent)
         // The lock lives in Git's common directory so different data roots cannot bypass it.
-        let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".lock"))
+        let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent(agent.stateNamespace + ".lock"))
         defer { lock.release() }
-        let stop = repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".stop")
+        let stop = repo.commonDirectory.appendingPathComponent(agent.stateNamespace + ".stop")
         try? FileManager.default.removeItem(at: stop)
         Cancellation.stopFile = stop
         defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
@@ -118,17 +123,17 @@ public final class Runner {
         let recent = try store.recent(branch: branch)
         let target = "refs/heads/" + branch
         guard try repo.git(["rev-parse", "--symbolic-full-name", "HEAD"]) != target else {
-            throw BSAError.message("Run from your development branch, not the BSA target branch")
+            throw AgentError.message("Run from your development branch, not the agent target branch")
         }
         let originalTarget = repo.ref(target)
         if let originalTarget, !force {
             guard try store.ownedBranches()[branch] == originalTarget else {
-                throw BSAError.message("Target branch is not owned by BSA or was changed externally. Choose a new --branch or use --force to continue from the existing branch tip.")
+                throw AgentError.message("Target branch is not owned by this agent or was changed externally. Choose a new --branch or use --force to continue from the existing branch tip.")
             }
         }
         let baseline = originalTarget ?? base
         if let originalTarget, !force, !repo.isAncestor(base, originalTarget) {
-            throw BSAError.message("BSA branch diverged from the configured base. Choose a new --branch or use --force to continue from its tip without rewriting history.")
+            throw AgentError.message("Agent branch diverged from the configured base. Choose a new --branch or use --force to continue from its tip without rewriting history.")
         }
         try repo.requireUncheckedOut(target)
         if force, let originalTarget {
@@ -158,8 +163,8 @@ public final class Runner {
         var worktrees: [URL] = []
         func remaining() -> TimeInterval { max(0.001, deadline - ProcessInfo.processInfo.systemUptime) }
         func checkBudget() throws {
-            if Cancellation.shouldStop { throw BSAError.message("cancelled") }
-            if ProcessInfo.processInfo.systemUptime >= deadline { throw BSAError.message("timed_out") }
+            if Cancellation.shouldStop { throw AgentError.message("cancelled") }
+            if ProcessInfo.processInfo.systemUptime >= deadline { throw AgentError.message("timed_out") }
         }
         func checks(_ values: [String], at directory: URL, baseline: Bool) throws {
             for command in values {
@@ -170,7 +175,7 @@ public final class Runner {
                 else { record.checks.append(check) }
                 try store.save(record)
                 try checkBudget()
-                if output.timedOut { throw BSAError.message("timed_out") }
+                if output.timedOut { throw AgentError.message("timed_out") }
             }
         }
         func addWorktree(_ directory: URL) throws {
@@ -182,7 +187,7 @@ public final class Runner {
             let tracked = try repo.git(["ls-files", "-v", "-z"], at: directory)
             let paths = try tracked.split(separator: "\0").map { entry in
                 guard entry.hasPrefix("H ") else {
-                    throw BSAError.message("Unsupported index entry in isolated worktree")
+                    throw AgentError.message("Unsupported index entry in isolated worktree")
                 }
                 return String(entry.dropFirst(2)) + "\0"
             }.joined()
@@ -206,14 +211,14 @@ public final class Runner {
             else { resolvedVerification = [] }
             guard skipChecks || config.verification != nil || !resolvedVerification.isEmpty else {
                 record.terminal = true
-                throw BSAError.message("No meaningful verification detected. Configure verification commands in bsa.json, or use --skip-checks or set verification to [] to skip them (Swift packages use swift test automatically).")
+                throw AgentError.message("No meaningful verification detected. Configure verification commands in \(agent.executableName).json, or use --skip-checks or set verification to [] to skip them (Swift packages use swift test automatically).")
             }
             func assertGit(at directory: URL) throws {
                 guard try repo.git(["rev-parse", "HEAD"], at: directory) == baseline,
                       try repo.git(["rev-parse", "--abbrev-ref", "HEAD"], at: directory) == "HEAD",
                       try repo.refs() == refs else {
                     record.terminal = true
-                    throw BSAError.message("Harness or checks changed HEAD or repository refs")
+                    throw AgentError.message("Harness or checks changed HEAD or repository refs")
                 }
             }
             let verification = skipChecks ? [] : resolvedVerification
@@ -226,7 +231,7 @@ public final class Runner {
             try assertGit(at: worktree)
             try stage(at: worktree)
             guard try repo.git(["diff", "--cached", "--name-only"], at: worktree).isEmpty else {
-                throw BSAError.message("Baseline checks modified repository files")
+                throw AgentError.message("Baseline checks modified repository files")
             }
             try checkBudget()
             try beginPhase("Harness")
@@ -240,8 +245,8 @@ public final class Runner {
             try beginPhase("Review")
             record.task = String(response.output.suffix(8192))
             try checkBudget()
-            if response.timedOut { throw BSAError.message("timed_out") }
-            guard response.status == 0 else { record.outcome = "harness_failed"; throw BSAError.message("Harness exited \(response.status): \(response.output.suffix(2000))") }
+            if response.timedOut { throw AgentError.message("timed_out") }
+            guard response.status == 0 else { record.outcome = "harness_failed"; throw AgentError.message("Harness exited \(response.status): \(response.output.suffix(2000))") }
             try assertGit(at: worktree)
             try stage(at: worktree)
             record.paths = try repo.git(["diff", "--cached", "--no-renames", "--name-only", "-z"], at: worktree)
@@ -261,17 +266,17 @@ public final class Runner {
                 try assertGit(at: verificationTree)
                 guard record.checks.allSatisfy({ $0.status == 0 }) else {
                     record.outcome = "verification_failed"
-                    throw BSAError.message("Required verification failed; no commit created")
+                    throw AgentError.message("Required verification failed; no commit created")
                 }
                 try stage(at: verificationTree)
                 guard try repo.git(["write-tree"], at: verificationTree) == tree else {
-                    throw BSAError.message("Verification modified the proposed change")
+                    throw AgentError.message("Verification modified the proposed change")
                 }
                 try checkBudget()
                 try beginPhase("Publication")
                 try repo.requireUncheckedOut(target)
                 let summary = response.output.split(separator: "\n").first.map { String($0.prefix(100)) } ?? "Improve repository"
-                let commit = try repo.git(["commit-tree", tree, "-p", baseline, "-m", AgentDefinition.boyScout.executableName + ": " + summary], at: worktree, environment: try config.commitEnvironment())
+                let commit = try repo.git(["commit-tree", tree, "-p", baseline, "-m", agent.executableName + ": " + summary], at: worktree, environment: try config.commitEnvironment())
                 // Persist the candidate before publication so an interrupted record is auditable.
                 record.commit = commit
                 try store.save(record)
@@ -314,7 +319,7 @@ public final class Runner {
     }
 
     private func validate(paths: [String], repository: Repository, worktree: URL, limit: Int, protectedPaths: [String]) throws {
-        guard paths.count <= limit else { throw BSAError.message("Change exceeds maxChangedFiles") }
+        guard paths.count <= limit else { throw AgentError.message("Change exceeds maxChangedFiles") }
         for path in paths {
             try ChangePolicy.validate(path: path, protectedPaths: protectedPaths)
         }
@@ -324,20 +329,20 @@ public final class Runner {
             guard fields.count >= 2,
                   ![":120000", ":160000"].contains(String(fields[0])),
                   !["120000", "160000"].contains(String(fields[1])) else {
-                throw BSAError.message("Symlink or submodule changes require human review")
+                throw AgentError.message("Symlink or submodule changes require human review")
             }
         }
         let diff = try repository.git(["diff", "--cached", "--numstat"], at: worktree)
-        guard !diff.split(separator: "\n").contains(where: { $0.hasPrefix("-\t-\t") }) else { throw BSAError.message("Binary changes require human review") }
+        guard !diff.split(separator: "\n").contains(where: { $0.hasPrefix("-\t-\t") }) else { throw AgentError.message("Binary changes require human review") }
         let patch = try repository.git(["diff", "--cached", "--no-ext-diff", "--no-textconv"], at: worktree)
         guard patch.utf8.count <= 100_000,
               !patch.contains("PRIVATE KEY-----"), !patch.contains("AKIA"), !patch.contains("ghp_"), !patch.contains("sk-proj-") else {
-            throw BSAError.message("Diff exceeds safety limits or includes symlinks, submodules, or possible secrets")
+            throw AgentError.message("Diff exceeds safety limits or includes symlinks, submodules, or possible secrets")
         }
         // Removing tests/verification is deliberately conservative in the first stage.
         for line in patch.split(separator: "\n") where line.hasPrefix("-") && !line.hasPrefix("---") {
             if ["assert", "expect(", "test(", ".skip", "swift test"].contains(where: { line.lowercased().contains($0) }) {
-                throw BSAError.message("Removal of verification requires human review")
+                throw AgentError.message("Removal of verification requires human review")
             }
         }
     }

@@ -12,11 +12,13 @@ public struct LocalSchedule: Codable {
 
 public struct Scheduler {
     public let directory: URL
-    public init(dataDirectory: URL? = nil) throws {
+    private let agent: AgentDefinition
+    public init(dataDirectory: URL? = nil, agent: AgentDefinition = .generic) throws {
+        self.agent = agent
         // Match StateStore: XDG requires ignoring relative base directories.
         let xdgData = ProcessInfo.processInfo.environment["XDG_DATA_HOME"].flatMap { $0.hasPrefix("/") ? $0 : nil }
         let base = xdgData ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share").path
-        directory = (dataDirectory ?? URL(fileURLWithPath: base).appendingPathComponent("bsa")).appendingPathComponent("schedules")
+        directory = (dataDirectory ?? URL(fileURLWithPath: base).appendingPathComponent(agent.stateNamespace)).appendingPathComponent("schedules")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     }
     public func list() throws -> [LocalSchedule] {
@@ -44,7 +46,7 @@ public struct Scheduler {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
         let parts = at.split(separator: ":").map { Int($0)! }
         #if os(macOS)
-        let plist: [String: Any] = ["Label": "local.bsa." + schedule.id,
+        let plist: [String: Any] = ["Label": "local." + agent.stateNamespace + "." + schedule.id,
             "ProgramArguments": ["/bin/sh", scriptURL.path],
             "StartCalendarInterval": ["Hour": parts[0], "Minute": parts[1]],
             "StandardOutPath": stem.appendingPathExtension("log").path,
@@ -55,15 +57,15 @@ public struct Scheduler {
         // systemd quoting is separate from shell quoting.
         let escaped = scriptURL.path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "%", with: "%%")
         try Data("[Service]\nType=oneshot\nExecStart=/bin/sh \"\(escaped)\"\n".utf8)
-            .write(to: directory.appendingPathComponent("bsa-\(schedule.id).service"), options: .atomic)
+            .write(to: directory.appendingPathComponent("\(agent.stateNamespace)-\(schedule.id).service"), options: .atomic)
         try Data("[Timer]\nOnCalendar=*-*-* \(at):00\nPersistent=false\n[Install]\nWantedBy=timers.target\n".utf8)
-            .write(to: directory.appendingPathComponent("bsa-\(schedule.id).timer"), options: .atomic)
+            .write(to: directory.appendingPathComponent("\(agent.stateNamespace)-\(schedule.id).timer"), options: .atomic)
         #endif
         return schedule
     }
     public func remove(_ id: String) throws {
-        guard try list().contains(where: { $0.id == id }) else { throw BSAError.message("Unknown schedule ID") }
-        for name in [id + ".json", id + ".sh", id + ".plist", "bsa-" + id + ".service", "bsa-" + id + ".timer"] {
+        guard try list().contains(where: { $0.id == id }) else { throw AgentError.message("Unknown schedule ID") }
+        for name in [id + ".json", id + ".sh", id + ".plist", "\(agent.stateNamespace)-" + id + ".service", "\(agent.stateNamespace)-" + id + ".timer"] {
             let url = directory.appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
         }

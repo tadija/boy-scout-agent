@@ -154,7 +154,7 @@ every iteration in the run, including configured commands and automatic Swift
 checks. It also permits running projects without detected verification.
 To skip only one phase, configure its command array as `[]`.
 
-Commands run in order from the worktree root, in each phase's separate checkout. Include dependency installation or other setup in each phase that needs it; baseline build artifacts are not shared with verification. A failed command stops the phase.
+Commands run in order from the worktree root, in each phase's separate checkout. Include dependency installation or other setup in each phase that needs it; baseline build artifacts are not shared with verification. Command failures are recorded; publishing requires all final verification commands to succeed. Baseline failures are retained for comparison and diagnostics.
 
 For a Swift package, the defaults run `swift test` in both phases. To use a quick baseline and a broader final check:
 
@@ -216,3 +216,21 @@ To keep your Git identity for every run, set `"commitIdentity": "git"` in your r
 Prompt precedence is CLI `--prompt PATH`, repository `prompt`, global `prompt`, then the embedded [Boy Scout mission](../prompt.md). A repository `null` clears a global override. Files are read before execution and the resolved mission stays fixed for the session. Runtime worktrees never change path resolution. The engine contract and runtime history are composed separately and remain present for every harness, including Ollama. Additional `instructions` do not replace the mission or contract.
 
 `bsa config --prompt` retains its existing meaning: preview the configured full prompt without invoking a harness. It takes no path argument; `bsa run --prompt PATH` selects a mission file.
+
+## Generic and specialized agents
+
+The same schema and command flags are implemented by `SwiftAgentCLI` for every agent. `swift-agent` reads repository `swift-agent.json` and global `$XDG_CONFIG_HOME/swift-agent/config.json`; `bsa` continues reading only its existing locations. Configuration paths use the original repository root for both products. A missing or `null` generic `prompt` requires CLI `--prompt`; no mission is embedded in the generic executable. `init` generates defaults but does not invent a mission.
+
+Generic defaults are `Swift Agent <swift-agent@localhost>`, branch `swift-agent/<project>`, and state `$XDG_DATA_HOME/swift-agent`. Count, timeout, verification, harness discovery, failure limit, and no-candidate limit match the existing engine defaults. State and config namespaces can be customized by specialized `AgentDefinition` values. Each agent's repository configuration filename is protected by the runner and CLI; mission overrides cannot remove that guard. BSA's emitted defaults remain unchanged.
+
+For persistent documentation work, create `swift-agent.json`:
+
+```json
+{
+  "prompt": "missions/documentation.md",
+  "verification": ["swift test"],
+  "maxIterations": 3
+}
+```
+
+Use verification commands appropriate to the repository. Generic schedules reload this configuration; configure a persistent mission before scheduling.

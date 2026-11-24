@@ -9,10 +9,10 @@ struct RepositoryLock {
     let descriptor: Int32
     init(at url: URL) throws {
         descriptor = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
-        guard descriptor >= 0 else { throw BSAError.message("Cannot open repository lock") }
+        guard descriptor >= 0 else { throw AgentError.message("Cannot open repository lock") }
         guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
             close(descriptor)
-            throw BSAError.message("Another BSA run holds this repository's lock")
+            throw AgentError.message("Another agent run holds this repository's lock")
         }
     }
     func release() { flock(descriptor, LOCK_UN); close(descriptor) }
@@ -47,7 +47,7 @@ public struct Record: Codable {
 
 struct StateStore {
     let directory: URL
-    init(repository: Repository, dataDirectory: URL?) throws {
+    init(repository: Repository, dataDirectory: URL?, agent: AgentDefinition = .generic) throws {
         // Hex encoding is stable and collision-free, unlike Swift's randomized Hasher.
         let identity = repository.commonDirectory.path.utf8.map { String(format: "%02x", $0) }.joined()
         // Split long identities into path components to respect filesystem component limits.
@@ -57,14 +57,14 @@ struct StateStore {
         let environment = ProcessInfo.processInfo.environment
         let xdgData = environment["XDG_DATA_HOME"].flatMap { $0.hasPrefix("/") ? $0 : nil }
         let base = dataDirectory ?? URL(fileURLWithPath: xdgData ??
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share").path).appendingPathComponent(AgentDefinition.boyScout.stateNamespace)
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share").path).appendingPathComponent(agent.stateNamespace)
         directory = components.reduce(base.appendingPathComponent("repositories")) { $0.appendingPathComponent($1) }
         let statePath = Self.canonicalPath(for: directory)
         for field in try repository.worktreeFields() where field.hasPrefix("worktree ") {
             let checkout = URL(fileURLWithPath: String(field.dropFirst("worktree ".count)))
                 .standardizedFileURL.resolvingSymlinksInPath().path
             guard statePath != checkout, !statePath.hasPrefix(checkout == "/" ? "/" : checkout + "/") else {
-                throw BSAError.message("BSA data directory must be outside all repository worktrees")
+                throw AgentError.message("Agent data directory must be outside all repository worktrees")
             }
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,

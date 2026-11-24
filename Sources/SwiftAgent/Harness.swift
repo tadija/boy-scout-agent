@@ -28,7 +28,7 @@ struct CommandAdapter: HarnessAdapter {
                 (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":")
                     .map { String($0) + "/" + executable }
             guard paths.contains(where: FileManager.default.isExecutableFile(atPath:)) else {
-                throw BSAError.message("Cannot find custom executable: \(executable)")
+                throw AgentError.message("Cannot find custom executable: \(executable)")
             }
             return
         }
@@ -36,12 +36,12 @@ struct CommandAdapter: HarnessAdapter {
         let result = try CommandRunner().run("/usr/bin/env", probe, cwd: directory, timeout: 10)
         let flags = requiredFlags ?? arguments.dropFirst().filter { $0.hasPrefix("--") }
         guard result.status == 0, flags.allSatisfy(result.output.contains) else {
-            throw BSAError.message("Install a compatible \(name) CLI supporting \(arguments.dropFirst().joined(separator: " "))")
+            throw AgentError.message("Install a compatible \(name) CLI supporting \(arguments.dropFirst().joined(separator: " "))")
         }
     }
     public func run(prompt: String, cwd: URL, timeout: TimeInterval) throws -> CommandResult {
         let message = capturesFinalMessage ? FileManager.default.temporaryDirectory
-            .appendingPathComponent("bsa-" + name + "-" + UUID().uuidString) : nil
+            .appendingPathComponent("swift-agent-" + name + "-" + UUID().uuidString) : nil
         defer { if let message { try? FileManager.default.removeItem(at: message) } }
         let expanded = arguments.map { argument in
             argument.components(separatedBy: "{prompt}").map { part in
@@ -80,15 +80,15 @@ public enum Harnesses {
         try configuration.validate()
         let adapters = builtins(yolo: yolo, configuration: configuration)
         if configuration.harness == "custom" {
-            guard !yolo else { throw BSAError.message("--yolo only supports built-in harnesses; configure customCommand explicitly for a custom harness") }
-            guard let command = configuration.customCommand, let executable = command.first, !executable.isEmpty, !executable.hasPrefix("-"), !executable.contains("="), (executable.hasPrefix("/") || !executable.contains("/")), command.dropFirst().contains(where: { $0.contains("{prompt}") }) else { throw BSAError.message("customCommand requires an executable and {prompt} argument") }
+            guard !yolo else { throw AgentError.message("--yolo only supports built-in harnesses; configure customCommand explicitly for a custom harness") }
+            guard let command = configuration.customCommand, let executable = command.first, !executable.isEmpty, !executable.hasPrefix("-"), !executable.contains("="), (executable.hasPrefix("/") || !executable.contains("/")), command.dropFirst().contains(where: { $0.contains("{prompt}") }) else { throw AgentError.message("customCommand requires an executable and {prompt} argument") }
             return CommandAdapter(name: "custom", arguments: command)
         }
         if let name = configuration.harness {
-            guard let adapter = adapters.first(where: { $0.name == name }) else { throw BSAError.message("Unknown harness: \(name)") }
+            guard let adapter = adapters.first(where: { $0.name == name }) else { throw AgentError.message("Unknown harness: \(name)") }
             return adapter
         }
         for adapter in adapters { if (try? adapter.detect(in: directory)) != nil { return adapter } }
-        throw BSAError.message("Install Codex, Claude Code, Pi, OpenCode or Gemini, or configure Ollama or a custom harness")
+        throw AgentError.message("Install Codex, Claude Code, Pi, OpenCode or Gemini, or configure Ollama or a custom harness")
     }
 }

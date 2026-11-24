@@ -1,9 +1,10 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+import BoyScoutAgent
 
 final class ConfigurationTests: XCTestCase {
     func testDefaultEncodingIncludesAutomaticSettingsAsNull() throws {
-        let data = try JSONEncoder().encode(Configuration())
+        let data = try JSONEncoder().encode(Configuration(agent: .boyScout))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object.count, 20)
         for key in ["prompt", "ollamaModel", "harness", "customCommand", "branch", "base", "baseline", "verification"] {
@@ -12,11 +13,11 @@ final class ConfigurationTests: XCTestCase {
         let decoded = try JSONDecoder().decode(Configuration.self, from: data)
         try decoded.validate()
         XCTAssertEqual(decoded.maxIterations, 1)
-        XCTAssertEqual(decoded.commitIdentity, Configuration().commitIdentity)
+        XCTAssertEqual(decoded.commitIdentity, Configuration(agent: .boyScout).commitIdentity)
     }
 
     func testOllamaSettingsAcceptLANHostAndRejectInvalidValues() throws {
-        var configuration = Configuration()
+        var configuration = Configuration(agent: .boyScout)
         configuration.ollamaHost = "http://192.168.1.50:11434"
         configuration.ollamaModel = "local-model:latest"
         XCTAssertNoThrow(try configuration.validate())
@@ -24,7 +25,7 @@ final class ConfigurationTests: XCTestCase {
             configuration.ollamaHost = host
             XCTAssertThrowsError(try configuration.validate(), host)
         }
-        configuration.ollamaHost = Configuration().ollamaHost
+        configuration.ollamaHost = Configuration(agent: .boyScout).ollamaHost
         configuration.ollamaMaxTurns = 0
         XCTAssertThrowsError(try configuration.validate())
         configuration.ollamaMaxTurns = 40
@@ -33,7 +34,7 @@ final class ConfigurationTests: XCTestCase {
     }
 
     func testTimeoutValidationRequiresFinitePositiveValueWithinOneDay() throws {
-        var configuration = Configuration()
+        var configuration = Configuration(agent: .boyScout)
         for timeout in [Double.nan, .infinity, -.infinity, -1, 0, 86400.0.nextUp] {
             configuration.timeoutSeconds = timeout
             XCTAssertThrowsError(try configuration.validate(), "Accepted timeout: \(timeout)")

@@ -1,5 +1,6 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+import BoyScoutAgent
 
 final class RunnerTests: RepositoryTestCase {
     func testScheduleLifecyclePreservesRepository() throws {
@@ -16,21 +17,21 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertEqual(try git(["status", "--porcelain"]), "")
     }
     func testExpiredDeadlineDoesNotInvokeHarness() throws {
-        let config = try Configuration.load(repository: Repository(at: checkout))
-        let records = try Runner().runSession(at: checkout, configuration: config,
+        let config = try Configuration.load(repository: Repository(at: checkout), agent: .boyScout)
+        let records = try Runner(agent: .boyScout).runSession(at: checkout, configuration: config,
             harness: FakeHarness { _ in XCTFail("Expired session invoked harness"); return self.success() },
             dataDirectory: data, deadline: Date(timeIntervalSinceNow: -1))
         XCTAssertTrue(records.isEmpty)
         try assertNoCommit()
     }
     func testStopWithoutActiveSessionIsRejected() throws {
-        XCTAssertThrowsError(try Runner().stop(at: checkout))
+        XCTAssertThrowsError(try Runner(agent: .boyScout).stop(at: checkout))
     }
 
     func testSessionStopsAtSaturation() throws {
-        var config = try Configuration.load(repository: Repository(at: checkout))
+        var config = try Configuration.load(repository: Repository(at: checkout), agent: .boyScout)
         config.maxIterations = 100
-        let records = try Runner().runSession(at: checkout, configuration: config,
+        let records = try Runner(agent: .boyScout).runSession(at: checkout, configuration: config,
             harness: FakeHarness(action: { _ in self.success() }), dataDirectory: data)
         XCTAssertEqual(records.count, 2)
         XCTAssertTrue(records.allSatisfy { $0.outcome == "no_candidate" })
@@ -38,10 +39,10 @@ final class RunnerTests: RepositoryTestCase {
     }
 
     func testSessionCountUsesFreshWorktrees() throws {
-        var config = try Configuration.load(repository: Repository(at: checkout))
+        var config = try Configuration.load(repository: Repository(at: checkout), agent: .boyScout)
         config.maxIterations = 2
         var seen: Set<URL> = []
-        let records = try Runner().runSession(at: checkout, configuration: config,
+        let records = try Runner(agent: .boyScout).runSession(at: checkout, configuration: config,
             harness: FakeHarness(action: { cwd in
                 seen.insert(cwd)
                 try self.write("value.txt", UUID().uuidString, at: cwd)
@@ -63,8 +64,8 @@ final class RunnerTests: RepositoryTestCase {
         let status = try git(["status", "--porcelain"])
         let index = try git(["diff", "--cached"])
         var progress: [String] = []
-        let record = try Runner().run(at: checkout, harness: FakeHarness { cwd in
-            let active = try XCTUnwrap(Runner().status(at: self.checkout, dataDirectory: self.data))
+        let record = try Runner(agent: .boyScout).run(at: checkout, harness: FakeHarness { cwd in
+            let active = try XCTUnwrap(Runner(agent: .boyScout).status(at: self.checkout, dataDirectory: self.data))
             XCTAssertEqual(active.phase, "Harness")
             XCTAssertEqual(try String(contentsOf: cwd.appendingPathComponent("value.txt")), "before\n")
             try self.write("value.txt", "after\n", at: cwd)
@@ -77,7 +78,7 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertEqual(try git(["status", "--porcelain"]), status)
         XCTAssertEqual(try git(["diff", "--cached"]), index)
         XCTAssertEqual(try String(contentsOf: checkout.appendingPathComponent("value.txt")), "user unstaged\n")
-        XCTAssertEqual(try Runner().status(at: checkout, dataDirectory: data)?.commit, record.commit)
+        XCTAssertEqual(try Runner(agent: .boyScout).status(at: checkout, dataDirectory: data)?.commit, record.commit)
         XCTAssertTrue(try git(["log", "-1", "--format=%s", record.branch]).hasPrefix("bsa: "))
         let phases = ["Setup", "Baseline", "Harness", "Review", "Verification", "Publication", "Cleanup"]
         XCTAssertEqual(progress, phases.map { $0 + "…" })
@@ -86,16 +87,16 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertTrue(timings.values.allSatisfy { $0 >= 0 && $0.isFinite })
         XCTAssertLessThanOrEqual(timings.values.reduce(0, +), try XCTUnwrap(record.finished).timeIntervalSince(record.started))
         XCTAssertNil(record.phase)
-        XCTAssertEqual(try Runner().status(at: checkout, dataDirectory: data)?.phaseSeconds, timings)
+        XCTAssertEqual(try Runner(agent: .boyScout).status(at: checkout, dataDirectory: data)?.phaseSeconds, timings)
     }
 
     func testCommitIdentitiesSetAuthorAndCommitterWithoutChangingGitConfig() throws {
         let inheritedAuthor = ProcessInfo.processInfo.environment["GIT_AUTHOR_NAME"]
         for (index, identity) in ["Boy Scout Agent <boy-scout-agent@localhost>", "Custom Scout <custom@example.invalid>", "git"].enumerated() {
-            var config = try Configuration.load(repository: Repository(at: checkout))
+            var config = try Configuration.load(repository: Repository(at: checkout), agent: .boyScout)
             if index != 0 { config.commitIdentity = identity }
             config.branch = "identity-\(index)"
-            let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+            let record = try Runner(agent: .boyScout).run(at: checkout, configuration: config, harness: FakeHarness { cwd in
                 XCTAssertEqual(ProcessInfo.processInfo.environment["GIT_AUTHOR_NAME"], inheritedAuthor)
                 try self.write("value.txt", "identity change\n", at: cwd)
                 return self.success()
@@ -110,15 +111,15 @@ final class RunnerTests: RepositoryTestCase {
 
     func testCommitIdentityConfigAndValidation() throws {
         try write("bsa.json", #"{"commitIdentity":"Config Scout <config@example.invalid>"}"#)
-        let loaded = try Configuration.load(repository: Repository(at: checkout))
+        let loaded = try Configuration.load(repository: Repository(at: checkout), agent: .boyScout)
         XCTAssertEqual(loaded.commitIdentity, "Config Scout <config@example.invalid>")
         XCTAssertEqual(try loaded.commitEnvironment()["GIT_AUTHOR_EMAIL"], "config@example.invalid")
         for identity in ["", "Scout", "<email>", "Scout <>", "Scout <a b>", "Scout <a> trailing", "Scout\nOther <email>", "Scout <a\0b>", "Scout <<email>>"] {
-            var config = Configuration()
+            var config = Configuration(agent: .boyScout)
             config.commitIdentity = identity
             XCTAssertThrowsError(try config.validate(), identity)
         }
-        var config = Configuration()
+        var config = Configuration(agent: .boyScout)
         config.commitIdentity = "git"
         XCTAssertEqual(try config.commitEnvironment(), [:])
     }
@@ -127,11 +128,11 @@ final class RunnerTests: RepositoryTestCase {
         let before = "test $(cat value.txt) = before"
         let after = "test $(cat value.txt) = after"
         for (index, commands) in [([], [after]), ([before], []), ([], []), ([before], [after])].enumerated() {
-            var config = Configuration()
+            var config = Configuration(agent: .boyScout)
             config.branch = "checks-\(index)"
             config.baseline = commands.0
             config.verification = commands.1
-            let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+            let record = try Runner(agent: .boyScout).run(at: checkout, configuration: config, harness: FakeHarness { cwd in
                 try self.write("value.txt", "after\n", at: cwd)
                 return self.success()
             }, dataDirectory: data)
@@ -173,11 +174,11 @@ final class RunnerTests: RepositoryTestCase {
 
     func testBaselineConfigRejectsEmptyCommandsButAcceptsEmptyArray() throws {
         try write("bsa.json", #"{"baseline":[],"verification":[]}"#)
-        let config = try Configuration.load(repository: Repository(at: checkout))
+        let config = try Configuration.load(repository: Repository(at: checkout), agent: .boyScout)
         XCTAssertEqual(config.baseline, [])
         XCTAssertEqual(config.verification, [])
         try write("bsa.json", #"{"baseline":["  "],"verification":[]}"#)
-        XCTAssertThrowsError(try Configuration.load(repository: Repository(at: checkout)))
+        XCTAssertThrowsError(try Configuration.load(repository: Repository(at: checkout), agent: .boyScout))
     }
 
     func testHarnessFailureDoesNotCommitAndCleansWorktree() throws {
@@ -300,16 +301,16 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertEqual(recovered.outcome, "interrupted")
     }
     func testBaselineMutationIsRejected() throws {
-        var configuration = Configuration()
+        var configuration = Configuration(agent: .boyScout)
         configuration.verification = ["printf generated >> value.txt"]
-        let record = try Runner().run(at: checkout, configuration: configuration,
+        let record = try Runner(agent: .boyScout).run(at: checkout, configuration: configuration,
             harness: FakeHarness { _ in self.success() }, dataDirectory: data)
         XCTAssertEqual(record.outcome, "rejected")
         try assertNoCommit()
     }
     func testUnknownConfigurationKeyIsRejected() throws {
         try write("bsa.json", "{\"verificaton\":[\"true\"]}")
-        XCTAssertThrowsError(try Configuration.load(repository: Repository(at: checkout)))
+        XCTAssertThrowsError(try Configuration.load(repository: Repository(at: checkout), agent: .boyScout))
     }
 
     func testExistingUnownedBranchIsNeverAdopted() throws {
@@ -327,9 +328,9 @@ final class RunnerTests: RepositoryTestCase {
         try git(["add", "."])
         try git(["commit", "-m", "Diverge from target"])
         let head = try git(["rev-parse", "HEAD"])
-        var config = try Configuration.load(repository: Repository(at: checkout))
+        var config = try Configuration.load(repository: Repository(at: checkout), agent: .boyScout)
         config.branch = "existing"
-        let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+        let record = try Runner(agent: .boyScout).run(at: checkout, configuration: config, harness: FakeHarness { cwd in
             XCTAssertEqual(try String(contentsOf: cwd.appendingPathComponent("value.txt")), "existing work\n")
             try self.write("value.txt", "improved\n", at: cwd)
             return self.success()
@@ -345,28 +346,28 @@ final class RunnerTests: RepositoryTestCase {
         let first = try run { cwd in try self.write("value.txt", "first\n", at: cwd); return self.success() }
         try git(["update-ref", "refs/heads/" + first.branch, "HEAD"])
         XCTAssertThrowsError(try run { _ in XCTFail("Must require explicit adoption"); return self.success() })
-        let record = try Runner().run(at: checkout, harness: FakeHarness { _ in self.success() }, dataDirectory: data, force: true)
+        let record = try Runner(agent: .boyScout).run(at: checkout, harness: FakeHarness { _ in self.success() }, dataDirectory: data, force: true)
         XCTAssertEqual(record.outcome, "no_candidate")
         XCTAssertEqual(try run { _ in self.success() }.outcome, "no_candidate")
     }
 
     func testForceRejectsCheckedOutTargetIncludingLinkedWorktrees() throws {
-        var config = try Configuration.load(repository: Repository(at: checkout))
+        var config = try Configuration.load(repository: Repository(at: checkout), agent: .boyScout)
         config.branch = "main"
         let harness = FakeHarness { _ in XCTFail("Checked-out target invoked harness"); return self.success() }
-        XCTAssertThrowsError(try Runner().run(at: checkout, configuration: config, harness: harness, dataDirectory: data, force: true))
+        XCTAssertThrowsError(try Runner(agent: .boyScout).run(at: checkout, configuration: config, harness: harness, dataDirectory: data, force: true))
         let linked = temporary.appendingPathComponent("linked-force")
         try git(["worktree", "add", "-b", "existing", linked.path])
         config.branch = "existing"
-        XCTAssertThrowsError(try Runner().run(at: checkout, configuration: config, harness: harness, dataDirectory: data, force: true))
+        XCTAssertThrowsError(try Runner(agent: .boyScout).run(at: checkout, configuration: config, harness: harness, dataDirectory: data, force: true))
     }
 
     func testForceDoesNotOverwriteConcurrentBranchChanges() throws {
         try git(["branch", "existing"])
         let original = try git(["rev-parse", "HEAD"])
-        var config = try Configuration.load(repository: Repository(at: checkout))
+        var config = try Configuration.load(repository: Repository(at: checkout), agent: .boyScout)
         config.branch = "existing"
-        let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+        let record = try Runner(agent: .boyScout).run(at: checkout, configuration: config, harness: FakeHarness { cwd in
             try self.write("value.txt", "improvement\n", at: cwd)
             // Simulate another process deleting the target while the harness runs.
             try self.git(["update-ref", "-d", "refs/heads/existing"])
@@ -386,7 +387,7 @@ final class RunnerTests: RepositoryTestCase {
         XCTAssertEqual(main.commonDirectory, other.commonDirectory)
         let lock = try RepositoryLock(at: main.commonDirectory.appendingPathComponent("bsa.lock"))
         defer { lock.release() }
-        XCTAssertThrowsError(try Runner().run(at: linked, harness: FakeHarness { _ in self.success() }, dataDirectory: data))
+        XCTAssertThrowsError(try Runner(agent: .boyScout).run(at: linked, harness: FakeHarness { _ in self.success() }, dataDirectory: data))
     }
     func testDetachedDevelopmentCheckoutIsSupported() throws {
         try git(["checkout", "--detach"])
@@ -405,7 +406,7 @@ final class RunnerTests: RepositoryTestCase {
     }
     func testConfigurationRejectsBooleanLimits() throws {
         try write("bsa.json", "{\"timeoutSeconds\":true}")
-        XCTAssertThrowsError(try Configuration.load(repository: Repository(at: checkout)))
+        XCTAssertThrowsError(try Configuration.load(repository: Repository(at: checkout), agent: .boyScout))
     }
     func testNewSymlinkIsRejected() throws {
         let record = try run { cwd in
@@ -417,9 +418,9 @@ final class RunnerTests: RepositoryTestCase {
     }
     func testFinalVerificationMutationIsRejected() throws {
         // The baseline is read-only; the changed content triggers a side effect in the final check.
-        var config = Configuration()
+        var config = Configuration(agent: .boyScout)
         config.verification = ["if grep -q after value.txt; then printf mutated >> value.txt; fi"]
-        let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+        let record = try Runner(agent: .boyScout).run(at: checkout, configuration: config, harness: FakeHarness { cwd in
             try self.write("value.txt", "after\n", at: cwd)
             return self.success()
         }, dataDirectory: data)
@@ -439,7 +440,7 @@ final class RunnerTests: RepositoryTestCase {
     }
 
     func testHarnessLaunchErrorIsRecordedAsHarnessFailure() throws {
-        let record = try run { _ in throw BSAError.message("fake harness disappeared") }
+        let record = try run { _ in throw AgentError.message("fake harness disappeared") }
         XCTAssertEqual(record.outcome, "harness_failed")
         XCTAssertTrue(record.detail?.contains("disappeared") == true)
         try assertNoCommit()
@@ -456,9 +457,9 @@ final class RunnerTests: RepositoryTestCase {
         try git(["commit", "-m", "Ignore local input"])
         let baseline = try git(["rev-parse", "HEAD"])
 
-        var config = Configuration()
+        var config = Configuration(agent: .boyScout)
         config.verification = ["test $(cat value.txt) = before || test -f local-input.txt"]
-        let record = try Runner().run(at: checkout, configuration: config, harness: FakeHarness { cwd in
+        let record = try Runner(agent: .boyScout).run(at: checkout, configuration: config, harness: FakeHarness { cwd in
             try self.write("value.txt", "after\n", at: cwd)
             try self.write("local-input.txt", "local input\n", at: cwd)
             return self.success()
@@ -489,7 +490,7 @@ final class RunnerTests: RepositoryTestCase {
         let alias = temporary.appendingPathComponent("checkout-alias")
         try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: checkout)
         for location in [inside, alias.appendingPathComponent("state")] {
-            XCTAssertThrowsError(try Runner().run(at: checkout, harness: FakeHarness { _ in
+            XCTAssertThrowsError(try Runner(agent: .boyScout).run(at: checkout, harness: FakeHarness { _ in
                 XCTFail("Harness should not run")
                 return self.success()
             }, dataDirectory: location))

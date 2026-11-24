@@ -1,5 +1,6 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif

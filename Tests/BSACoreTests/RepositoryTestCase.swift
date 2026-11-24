@@ -1,5 +1,6 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+import BoyScoutAgent
 
 struct FakeHarness: HarnessAdapter {
     let name = "fake"
@@ -37,11 +38,11 @@ class RepositoryTestCase: XCTestCase {
     }
     @discardableResult func git(_ arguments: [String], at root: URL? = nil) throws -> String {
         let result = try commands.run("/usr/bin/env", ["git"] + arguments, cwd: root ?? checkout, cancellable: false)
-        guard result.status == 0 else { throw BSAError.message(result.output) }
+        guard result.status == 0 else { throw AgentError.message(result.output) }
         return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     func run(_ action: @escaping (URL) throws -> CommandResult) throws -> Record {
-        try Runner().run(at: checkout, harness: FakeHarness(action: action), dataDirectory: data)
+        try Runner(agent: .boyScout).run(at: checkout, harness: FakeHarness(action: action), dataDirectory: data)
     }
     func success() -> CommandResult { CommandResult(status: 0, output: "Correct the value fixture", timedOut: false) }
     func assertNoCommit() throws {

@@ -93,7 +93,38 @@ BSA starts each iteration with a fresh agent and recent run history. Run it agai
 
 The canonical Boy Scout mission lives in [prompt.md](prompt.md). SwiftPM embeds its exact UTF-8 contents in the executable at build time; installed BSA needs no Markdown file or resource bundle. `--prompt PATH` replaces the mission for one run. The `prompt` setting in `bsa.json` (or global configuration) provides a persistent override. CLI paths resolve from the invocation directory; configured paths resolve from the repository root. Missing, unreadable, invalid UTF-8, or empty explicit missions fail rather than falling back.
 
-The engine composes a mandatory execution contract, the mission, and separate project instructions and recent history. `--instructions` remains additional guidance. A mission override cannot disable Git isolation, protected paths, verification, or commit ownership. `bsa config --prompt` previews the configured composition. The internal agent definition owns BSA identity, mission, namespaces, and the default stop policy; this stage retains the existing targets and executable.
+The engine composes a mandatory execution contract, the mission, and separate project instructions and recent history. `--instructions` remains additional guidance. A mission override cannot disable Git isolation, protected paths, verification, or commit ownership. `bsa config --prompt` previews the configured composition. The public `AgentDefinition` supplies identity, mission, namespaces, and the default stop policy. BSA is a thin consumer of the reusable `SwiftAgent` engine and `SwiftAgentCLI` command implementation.
+
+## SwiftAgent libraries and generic CLI
+
+This repository also contains **SwiftAgent**: a harness-agnostic Swift framework for autonomous, iterative repository agents. Stage 2 establishes the reusable package products here; independent repository extraction is reserved for Stage 3.
+
+```sh
+./Scripts/install.sh --product swift-agent
+swift-agent run --prompt /path/to/mission.md --count 5 --duration 1h --harness codex
+```
+
+The generic CLI requires a mission via `--prompt PATH` or the `prompt` configuration setting. It never falls back to the Boy Scout mission. It uses `swift-agent.json`, `~/.config/swift-agent/config.json`, `~/.local/share/swift-agent`, and `swift-agent/<project>` branches. BSA keeps its existing configuration, history, branches, installer default, and self-update behavior. Generic self-update has no upstream destination yet; rebuild with the installer.
+
+For a documentation agent, use [the example mission](Examples/documentation.md):
+
+```sh
+swift-agent run --prompt /path/to/boy-scout-agent/Examples/documentation.md --count 3
+```
+
+Swift packages can depend on the `SwiftAgent` and `SwiftAgentCLI` library products. A specialized executable needs only an agent definition and a call to the shared CLI:
+
+```swift
+import SwiftAgent
+import SwiftAgentCLI
+
+let agent = AgentDefinition(name: "Documentation Agent", executableName: "doc-agent",
+                            mission: "Improve one missing or incorrect usage example.")
+let status = AgentCLI.run(agent: agent)
+// Pass status to exit() in your executable entry point.
+```
+
+See [the package architecture and public API](Docs/SwiftAgent.md) for SwiftPM integration, programmatic execution, module ownership, embedding, and current execution constraints.
 
 ## Documentation
 

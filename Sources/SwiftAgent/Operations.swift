@@ -6,7 +6,7 @@ public enum ExecutionWindow {
         guard let suffix = value.last, let multiplier = units[suffix],
               let number = Double(value.dropLast()), number.isFinite, number > 0,
               number * multiplier <= 604800 else {
-            throw BSAError.message("Duration requires a positive number followed by s, m or h (maximum 7 days)")
+            throw AgentError.message("Duration requires a positive number followed by s, m or h (maximum 7 days)")
         }
         return number * multiplier
     }
@@ -19,7 +19,7 @@ public enum ExecutionWindow {
               (0...23).contains(hour), (0...59).contains(minute),
               let date = calendar.nextDate(after: now, matching: DateComponents(hour: hour, minute: minute),
                                            matchingPolicy: .nextTime, repeatedTimePolicy: .first) else {
-            throw BSAError.message("--until requires local time HH:MM")
+            throw AgentError.message("--until requires local time HH:MM")
         }
         return date
     }

@@ -1,5 +1,6 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+
 
 final class HarnessTests: XCTestCase {
     func testFinalMessageCapturePreservesPromptAndCleansTemporaryFile() throws {

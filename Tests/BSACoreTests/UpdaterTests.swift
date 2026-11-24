@@ -1,5 +1,6 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+@testable import BoyScoutAgent
 
 final class UpdaterTests: XCTestCase {
     func testUpdateReplacesResolvedExecutableAndKeepsSymlink() throws {

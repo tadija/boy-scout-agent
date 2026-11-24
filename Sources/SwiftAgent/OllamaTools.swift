@@ -26,12 +26,12 @@ struct OllamaTools {
             tool("write_file", "Create or replace a UTF-8 file. Read existing files first; preserve unrelated content. No symlinks or protected paths.", ["path": path, "content": text], ["path", "content"]),
             tool("replace_text", "Replace exactly one occurrence of old_text in a UTF-8 file. Fails if missing or ambiguous.", ["path": path, "old_text": text, "new_text": text], ["path", "old_text", "new_text"])
         ]
-        return result + [tool("run_command", "Execute a shell command in the worktree for Git inspection, builds, and tests. No filesystem sandbox; BSA constraints still apply.", ["command": text], ["command"])]
+        return result + [tool("run_command", "Execute a shell command in the worktree for Git inspection, builds, and tests. No filesystem sandbox; engine constraints still apply.", ["command": text], ["command"])]
     }
 
     func checkBudget() throws {
-        guard !Cancellation.shouldStop else { throw BSAError.message("Ollama iteration cancelled") }
-        guard ProcessInfo.processInfo.systemUptime < deadline else { throw BSAError.message("Ollama iteration timed out") }
+        guard !Cancellation.shouldStop else { throw AgentError.message("Ollama iteration cancelled") }
+        guard ProcessInfo.processInfo.systemUptime < deadline else { throw AgentError.message("Ollama iteration timed out") }
     }
 
     static func bounded(_ text: String) -> String {
@@ -42,7 +42,7 @@ struct OllamaTools {
     func execute(_ name: String, arguments: [String: Any]) throws -> String {
         try checkBudget()
         func string(_ key: String) throws -> String {
-            guard let value = arguments[key] as? String else { throw BSAError.message("Missing string argument: \(key)") }
+            guard let value = arguments[key] as? String else { throw AgentError.message("Missing string argument: \(key)") }
             return value
         }
         switch name {
@@ -52,11 +52,11 @@ struct OllamaTools {
             let lines = try read(path: string("path")).components(separatedBy: "\n")
             let start = arguments["start_line"] as? Int ?? 1
             let count = arguments["line_count"] as? Int ?? 200
-            guard start > 0, count > 0, count <= 1000 else { throw BSAError.message("Invalid line range (maximum 1000 lines)") }
+            guard start > 0, count > 0, count <= 1000 else { throw AgentError.message("Invalid line range (maximum 1000 lines)") }
             return Self.bounded(lines.dropFirst(start - 1).prefix(count).enumerated().map { "\(start + $0.offset): \($0.element)" }.joined(separator: "\n"))
         case "search":
             let query = try string("query")
-            guard !query.isEmpty else { throw BSAError.message("Search query must not be empty") }
+            guard !query.isEmpty else { throw AgentError.message("Search query must not be empty") }
             var matches: [String] = []
             for path in try files(below: arguments["path"] as? String ?? ".") {
                 try checkBudget()
@@ -76,7 +76,7 @@ struct OllamaTools {
             let new = try string("new_text")
             let content = try read(path: path)
             guard !old.isEmpty, content.components(separatedBy: old).count == 2 else {
-                throw BSAError.message("old_text must match exactly once")
+                throw AgentError.message("old_text must match exactly once")
             }
             try write(path: path, content: content.replacingOccurrences(of: old, with: new))
             return "Text replaced"
@@ -86,7 +86,7 @@ struct OllamaTools {
             try checkBudget()
             return "Exit status: \(result.status)\n" + Self.bounded(result.output)
         default:
-            throw BSAError.message("Unknown tool: \(name)")
+            throw AgentError.message("Unknown tool: \(name)")
         }
     }
 
@@ -94,23 +94,23 @@ struct OllamaTools {
     private func resolve(_ path: String, writing: Bool = false) throws -> URL {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         guard !path.isEmpty, !path.hasPrefix("/"), !parts.contains(".."), !path.contains("\0") else {
-            throw BSAError.message("Path must stay within the worktree")
+            throw AgentError.message("Path must stay within the worktree")
         }
         let base = root.standardizedFileURL.resolvingSymlinksInPath()
         var url = base
         for part in parts where !part.isEmpty && part != "." {
             let lower = part.lowercased()
             guard ![".git", "secrets", "credentials"].contains(lower), lower != ".env", !lower.hasPrefix(".env."),
-                  !lower.hasSuffix(".pem"), !lower.hasSuffix(".key") else { throw BSAError.message("Restricted path: \(path)") }
+                  !lower.hasSuffix(".pem"), !lower.hasSuffix(".key") else { throw AgentError.message("Restricted path: \(path)") }
             url.appendPathComponent(part)
             if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
                attributes[.type] as? FileAttributeType == .typeSymbolicLink {
-                throw BSAError.message("Symlinks are not supported: \(path)")
+                throw AgentError.message("Symlinks are not supported: \(path)")
             }
         }
-        guard url.path == base.path || url.path.hasPrefix(base.path + "/") else { throw BSAError.message("Path escapes worktree") }
+        guard url.path == base.path || url.path.hasPrefix(base.path + "/") else { throw AgentError.message("Path escapes worktree") }
         if writing {
-            guard url != base else { throw BSAError.message("Cannot write the worktree root") }
+            guard url != base else { throw AgentError.message("Cannot write the worktree root") }
             let relative = String(url.path.dropFirst(base.path.count + 1))
             try ChangePolicy.validate(path: relative, protectedPaths: protectedPaths)
         }
@@ -123,7 +123,7 @@ struct OllamaTools {
                                       timeout: max(0.001, deadline - ProcessInfo.processInfo.systemUptime))
         try checkBudget()
         guard result.status == 0, !result.outputTruncated, result.outputIsUTF8 else {
-            throw BSAError.message("Cannot list worktree files (Git failed or output exceeded 1 MiB)")
+            throw AgentError.message("Cannot list worktree files (Git failed or output exceeded 1 MiB)")
         }
         return try Set(result.output.split(separator: "\0").map(String.init)).sorted().filter { path in
             try checkBudget()
@@ -137,18 +137,18 @@ struct OllamaTools {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         guard attributes[.type] as? FileAttributeType == .typeRegular,
               (attributes[.size] as? NSNumber)?.intValue ?? Int.max <= 1_048_576 else {
-            throw BSAError.message("Expected a regular UTF-8 file of at most 1 MiB")
+            throw AgentError.message("Expected a regular UTF-8 file of at most 1 MiB")
         }
         return try String(contentsOf: url, encoding: .utf8)
     }
 
     private func write(path: String, content: String) throws {
         let url = try resolve(path, writing: true)
-        guard content.utf8.count <= 1_048_576 else { throw BSAError.message("File exceeds 1 MiB") }
+        guard content.utf8.count <= 1_048_576 else { throw AgentError.message("File exceeds 1 MiB") }
         let files = FileManager.default
         let attributes = try? files.attributesOfItem(atPath: url.path)
         if let attributes, attributes[.type] as? FileAttributeType != .typeRegular {
-            throw BSAError.message("Can only overwrite regular files")
+            throw AgentError.message("Can only overwrite regular files")
         }
         try files.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(content.utf8).write(to: url, options: .atomic)

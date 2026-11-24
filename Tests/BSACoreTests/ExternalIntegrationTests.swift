@@ -1,5 +1,6 @@
 import XCTest
-@testable import BSACore
+@testable import SwiftAgent
+
 
 /// Real Swift build coverage, enabled explicitly in CI and before releases.
 final class ExternalIntegrationTests: RepositoryTestCase {

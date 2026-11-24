@@ -8,8 +8,10 @@ Before a release, run the external integration suite and CLI smoke test too:
 BSA_INTEGRATION_TESTS=1 swift test --filter ExternalIntegrationTests
 sh Tests/Integration/embedding-smoke.sh
 sh Tests/Integration/version-smoke.sh
+sh Tests/Integration/package-consumer-smoke.sh
 swift build -c release
 sh Tests/Integration/cli-smoke.sh "$(swift build -c release --show-bin-path)/bsa"
+sh Tests/Integration/generic-cli-smoke.sh "$(swift build -c release --show-bin-path)/swift-agent" "$(swift build -c release --show-bin-path)/bsa"
 ```
 
 CI runs these suites on macOS and Linux. The external integration test covers a real Swift package with a failing baseline that the harness fixes. CLI smoke tests cover the Codex adapter and other harnesses using fake executables; they never call a real model. Use `BSA_INTEGRATION_TESTS=1 swift test` to run both Swift suites together.
@@ -21,3 +23,16 @@ The version smoke test uses a tiny SwiftPM fixture to check `VERSION` changes, c
 Keep current safety and lifecycle regressions in the core suite. Historical record-schema compatibility is not a test requirement at this stage. Reuse successful iteration coverage for timing/history assertions, use only two iterations to prove fresh worktrees, and keep process-only and agent-definition tests independent of Git fixtures.
 
 To use the parallel command during BSA iterations, set `"verification": ["swift test --parallel --num-workers 4"]` in `bsa.json`. The baseline uses the same command unless configured separately. Automatic Swift detection continues to use `swift test`.
+
+Stage 2 adds `SwiftAgentPublicTests`, which imports only the public `SwiftAgent` module and exercises a documentation mission with a deterministic harness: verified commit, derived identity/branch/subject, history, unchanged second iteration, protected configuration, and missing-mission rejection before state creation. The existing `BSACoreTests` regression target now imports `SwiftAgent` and BSA's small application definition; its historical name is retained to keep suite selection stable.
+
+The generic CLI smoke suite checks required/configured missions, invocation-relative paths, count/time options, independent config/history/schedule namespaces, commit identity and subjects, and unavailable generic self-update. The external-consumer smoke suite builds a separate Swift package importing both library products without BSA resources. CI runs both alongside BSA compatibility smoke tests on macOS and Linux.
+
+To verify installation outside the checkout:
+
+```sh
+./Scripts/install.sh /tmp/agent-bin
+./Scripts/install.sh --product swift-agent /tmp/agent-bin
+sh Tests/Integration/cli-smoke.sh /tmp/agent-bin/bsa
+sh Tests/Integration/generic-cli-smoke.sh /tmp/agent-bin/swift-agent /tmp/agent-bin/bsa
+```
