@@ -57,7 +57,7 @@ struct StateStore {
         let environment = ProcessInfo.processInfo.environment
         let xdgData = environment["XDG_DATA_HOME"].flatMap { $0.hasPrefix("/") ? $0 : nil }
         let base = dataDirectory ?? URL(fileURLWithPath: xdgData ??
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share").path).appendingPathComponent("bsa")
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share").path).appendingPathComponent(AgentDefinition.boyScout.stateNamespace)
         directory = components.reduce(base.appendingPathComponent("repositories")) { $0.appendingPathComponent($1) }
         let statePath = Self.canonicalPath(for: directory)
         for field in try repository.worktreeFields() where field.hasPrefix("worktree ") {

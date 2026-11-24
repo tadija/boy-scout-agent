@@ -35,6 +35,7 @@ Run options:
   --branch NAME --base REV           Target branch and starting revision
   --force                           Adopt an existing target branch from its tip
   --identity VALUE                  \"Name <email>\" or git for configured Git identity
+  --prompt PATH                     Replace the mission Markdown for this run
   --instructions TEXT               Override configured project guidance
   --skip-checks                     Skip both baseline and verification commands
   --yolo                            Enable permissive mode (Ollama already allows shell commands)
@@ -115,7 +116,7 @@ do {
                     index += 1
                     continue
                 }
-                guard ["--ollama-model", "--ollama-host", "--instructions", "--identity", "--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
+                guard ["--prompt", "--ollama-model", "--ollama-host", "--instructions", "--identity", "--branch", "--base", "--count", "--harness", "--duration", "--until"].contains(args[index]), index + 1 < args.count else {
                     throw BSAError.message("Unknown or incomplete option: \(args[index]). See bsa --help.")
                 }
                 if args[index] == "--duration" {
@@ -126,6 +127,13 @@ do {
                     deadline = try ExecutionWindow.until(args[index + 1]) }
                 else if args[index] == "--branch" { configuration.branch = args[index + 1] }
                 else if args[index] == "--base" { configuration.base = args[index + 1] }
+                else if args[index] == "--prompt" {
+                    let path = args[index + 1]
+                    guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        throw BSAError.message("--prompt requires a nonempty path")
+                    }
+                    configuration.prompt = URL(fileURLWithPath: path, relativeTo: directory).standardizedFileURL.path
+                }
                 else if args[index] == "--instructions" { configuration.instructions = args[index + 1] }
                 else if args[index] == "--identity" { configuration.commitIdentity = args[index + 1] }
                 else if args[index] == "--ollama-model" { configuration.ollamaModel = args[index + 1] }
@@ -137,6 +145,7 @@ do {
                 }
                 index += 2
             }
+            _ = try configuration.mission(repository: Repository(at: directory))
             let harness = try Harnesses.select(configuration: configuration, directory: directory, yolo: yolo)
             if yolo { print("YOLO mode enabled for \(harness.name).") }
             print("Harness: \(harness.name). Up to \(configuration.maxIterations) isolated iterations…")

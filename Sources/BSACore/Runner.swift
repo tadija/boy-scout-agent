@@ -12,16 +12,17 @@ public final class Runner {
     public func prompt(at directory: URL, configuration: Configuration? = nil, dataDirectory: URL? = nil) throws -> String {
         let repo = try Repository(at: directory)
         let config = try configuration ?? Configuration.load(repository: repo)
+        let mission = try config.mission(repository: repo)
         let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
         let recent = try store.recent(branch: targetBranch(configuration: config, repository: repo))
-        return Planner.prompt(instructions: config.instructions, recent: recent)
+        return Planner.prompt(mission: mission, instructions: config.instructions, recent: recent)
     }
 
     private func targetBranch(configuration: Configuration, repository: Repository) -> String {
         let slug = repository.root.lastPathComponent.lowercased().map {
             $0.isASCII && ($0.isLetter || $0.isNumber) ? String($0) : "-"
         }.joined()
-        return configuration.branch ?? "bsa/\(slug)"
+        return configuration.branch ?? "\(AgentDefinition.boyScout.branchNamespace)/\(slug)"
     }
 
     public func status(at directory: URL, dataDirectory: URL? = nil) throws -> Record? {
@@ -31,13 +32,13 @@ public final class Runner {
     public func stop(at directory: URL) throws {
         let repo = try Repository(at: directory)
         do {
-            let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
+            let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".lock"))
             lock.release()
             throw BSAError.message("No active BSA run for this repository")
         } catch let error as BSAError {
             guard error.description.contains("Another BSA run") else { throw error }
         }
-        try Data().write(to: repo.commonDirectory.appendingPathComponent("bsa.stop"), options: .atomic)
+        try Data().write(to: repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".stop"), options: .atomic)
     }
 
     public func history(at directory: URL, dataDirectory: URL? = nil) throws -> [Record] {
@@ -52,10 +53,11 @@ public final class Runner {
                            dataDirectory: URL? = nil, deadline: Date? = nil, force: Bool = false, skipChecks: Bool = false, onProgress: (String) -> Void = { _ in }, onIteration: (Record) -> Void = { _ in }) throws -> [Record] {
         try configuration.validate()
         let repo = try Repository(at: directory)
-        let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
+        let mission = try configuration.mission(repository: repo)
+        let sessionLock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".lock"))
         defer { sessionLock.release() }
         let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
-        let stop = repo.commonDirectory.appendingPathComponent("bsa.stop")
+        let stop = repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".stop")
         try? FileManager.default.removeItem(at: stop)
         Cancellation.stopFile = stop
         defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
@@ -68,7 +70,7 @@ public final class Runner {
             if Cancellation.shouldStop || deadline.map({ Date() >= $0 }) == true { break }
             onProgress("Iteration \(index + 1) of \(configuration.maxIterations)")
             let budget = min(configuration.timeoutSeconds, deadline?.timeIntervalSinceNow ?? .infinity)
-            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, deadline: ProcessInfo.processInfo.systemUptime + budget, force: force, skipChecks: skipChecks, onProgress: onProgress)
+            let record = try iteration(repo: repo, config: configuration, harness: harness, store: store, sessionID: sessionID, mission: mission, deadline: ProcessInfo.processInfo.systemUptime + budget, force: force, skipChecks: skipChecks, onProgress: onProgress)
             records.append(record)
             onIteration(record)
             failures = ["committed", "no_candidate"].contains(record.outcome) ? 0 : failures + 1
@@ -83,20 +85,21 @@ public final class Runner {
         let repo = try Repository(at: directory)
         let config = try configuration ?? Configuration.load(repository: repo)
         try config.validate()
+        let mission = try config.mission(repository: repo)
         let store = try StateStore(repository: repo, dataDirectory: dataDirectory)
         // The lock lives in Git's common directory so different data roots cannot bypass it.
-        let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent("bsa.lock"))
+        let lock = try RepositoryLock(at: repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".lock"))
         defer { lock.release() }
-        let stop = repo.commonDirectory.appendingPathComponent("bsa.stop")
+        let stop = repo.commonDirectory.appendingPathComponent(AgentDefinition.boyScout.stateNamespace + ".stop")
         try? FileManager.default.removeItem(at: stop)
         Cancellation.stopFile = stop
         defer { Cancellation.stopFile = nil; try? FileManager.default.removeItem(at: stop) }
         try harness.detect(in: repo.root)
-        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds, force: force, skipChecks: skipChecks, onProgress: onProgress)
+        return try iteration(repo: repo, config: config, harness: harness, store: store, sessionID: UUID().uuidString.lowercased(), mission: mission, deadline: ProcessInfo.processInfo.systemUptime + config.timeoutSeconds, force: force, skipChecks: skipChecks, onProgress: onProgress)
     }
 
     private func iteration(repo: Repository, config: Configuration, harness: any HarnessAdapter,
-                           store: StateStore, sessionID: String, deadline: TimeInterval, force: Bool, skipChecks: Bool, onProgress: (String) -> Void) throws -> Record {
+                           store: StateStore, sessionID: String, mission: String, deadline: TimeInterval, force: Bool, skipChecks: Bool, onProgress: (String) -> Void) throws -> Record {
         let history = try store.latest
         if let previous = history, previous.outcome == "running" {
             var recovered = previous
@@ -229,7 +232,7 @@ public final class Runner {
             try beginPhase("Harness")
             let response: CommandResult
             do {
-                response = try harness.run(prompt: Planner.prompt(instructions: config.instructions, recent: recent), cwd: worktree, timeout: remaining())
+                response = try harness.run(prompt: Planner.prompt(mission: mission, instructions: config.instructions, recent: recent), cwd: worktree, timeout: remaining())
             } catch {
                 record.outcome = Cancellation.shouldStop ? "cancelled" : "harness_failed"
                 throw error
@@ -268,7 +271,7 @@ public final class Runner {
                 try beginPhase("Publication")
                 try repo.requireUncheckedOut(target)
                 let summary = response.output.split(separator: "\n").first.map { String($0.prefix(100)) } ?? "Improve repository"
-                let commit = try repo.git(["commit-tree", tree, "-p", baseline, "-m", "bsa: " + summary], at: worktree, environment: try config.commitEnvironment())
+                let commit = try repo.git(["commit-tree", tree, "-p", baseline, "-m", AgentDefinition.boyScout.executableName + ": " + summary], at: worktree, environment: try config.commitEnvironment())
                 // Persist the candidate before publication so an interrupted record is auditable.
                 record.commit = commit
                 try store.save(record)

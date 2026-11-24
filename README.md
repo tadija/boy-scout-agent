@@ -73,6 +73,7 @@ bsa run --harness claude --yolo
 bsa run --harness gemini --yolo
 bsa run --harness ollama --ollama-host http://192.168.1.50:11434 --ollama-model my-coding-model
 bsa run --instructions "Focus on error handling; preserve public APIs."
+bsa run --prompt ./my-mission.md
 bsa run --count 5 --harness codex --branch bsa/polish
 bsa run --count 100 --duration 4h
 ```
@@ -82,6 +83,12 @@ bsa run --count 100 --duration 4h
 BSA reports the current phase on stderr and prints total and per-phase timings after each iteration. `bsa status` also shows the active phase. Timings include baseline checks, harness work, and independent verification; by default, checks run twice, and fresh worktrees may require fresh builds. Configure `baseline` and `verification` separately, or set either to `[]` to skip its commands. For one run, use `--skip-checks` to skip both phases.
 
 BSA starts each iteration with a fresh agent and recent run history. Run it again to continue improving the same branch.
+
+## Mission and execution
+
+The canonical Boy Scout mission lives in [prompt.md](prompt.md). SwiftPM embeds its exact UTF-8 contents in the executable at build time; installed BSA needs no Markdown file or resource bundle. `--prompt PATH` replaces the mission for one run. The `prompt` setting in `bsa.json` (or global configuration) provides a persistent override. CLI paths resolve from the invocation directory; configured paths resolve from the repository root. Missing, unreadable, invalid UTF-8, or empty explicit missions fail rather than falling back.
+
+The engine composes a mandatory execution contract, the mission, and separate project instructions and recent history. `--instructions` remains additional guidance. A mission override cannot disable Git isolation, protected paths, verification, or commit ownership. `bsa config --prompt` previews the configured composition. The internal agent definition owns BSA identity, mission, namespaces, and the default stop policy; this stage retains the existing targets and executable.
 
 ## Documentation
 

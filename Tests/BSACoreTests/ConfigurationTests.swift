@@ -5,8 +5,8 @@ final class ConfigurationTests: XCTestCase {
     func testDefaultEncodingIncludesAutomaticSettingsAsNull() throws {
         let data = try JSONEncoder().encode(Configuration())
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(object.count, 19)
-        for key in ["ollamaModel", "harness", "customCommand", "branch", "base", "baseline", "verification"] {
+        XCTAssertEqual(object.count, 20)
+        for key in ["prompt", "ollamaModel", "harness", "customCommand", "branch", "base", "baseline", "verification"] {
             XCTAssertTrue(object[key] is NSNull, "Expected null default for \(key)")
         }
         let decoded = try JSONDecoder().decode(Configuration.self, from: data)

@@ -1,7 +1,7 @@
 import Foundation
 
 public struct Configuration: Codable {
-    public var commitIdentity: String = "Boy Scout Agent <boy-scout-agent@localhost>"
+    public var commitIdentity: String = AgentDefinition.boyScout.commitIdentity
     public var push: Bool = false
     public var harness: String?
     public var ollamaModel: String?
@@ -11,9 +11,10 @@ public struct Configuration: Codable {
     public var customCommand: [String]?
     public var protectedPaths: [String] = []
     public var instructions: String = ""
+    public var prompt: String?
     public var maxIterations: Int = 1
     public var failureLimit: Int = 3
-    public var saturationLimit: Int = 2
+    public var saturationLimit: Int = AgentDefinition.boyScout.consecutiveNoCandidateLimit
     public var branch: String?
     public var base: String?
     public var baseline: [String]?
@@ -34,6 +35,7 @@ public struct Configuration: Codable {
         try container.encode(customCommand, forKey: .customCommand)
         try container.encode(protectedPaths, forKey: .protectedPaths)
         try container.encode(instructions, forKey: .instructions)
+        try container.encode(prompt, forKey: .prompt)
         try container.encode(maxIterations, forKey: .maxIterations)
         try container.encode(failureLimit, forKey: .failureLimit)
         try container.encode(saturationLimit, forKey: .saturationLimit)
@@ -56,10 +58,10 @@ public struct Configuration: Codable {
             dictionary.merge(values) { _, new in new }
         }
         guard
-              Set(dictionary.keys).isSubset(of: ["ollamaModel", "ollamaHost", "ollamaMaxTurns", "ollamaContextLength", "commitIdentity", "branch", "base", "baseline", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "instructions", "maxIterations", "failureLimit", "saturationLimit", "push", "protectedPaths"]) else {
+              Set(dictionary.keys).isSubset(of: ["ollamaModel", "ollamaHost", "ollamaMaxTurns", "ollamaContextLength", "commitIdentity", "branch", "base", "baseline", "verification", "timeoutSeconds", "maxChangedFiles", "harness", "customCommand", "prompt", "instructions", "maxIterations", "failureLimit", "saturationLimit", "push", "protectedPaths"]) else {
             throw BSAError.message("bsa.json contains unknown keys or is not an object")
         }
-        let defaults: [String: Any] = ["ollamaHost": Configuration().ollamaHost, "ollamaMaxTurns": Configuration().ollamaMaxTurns, "ollamaContextLength": Configuration().ollamaContextLength, "commitIdentity": "Boy Scout Agent <boy-scout-agent@localhost>", "protectedPaths": [String](), "push": false, "timeoutSeconds": 1800, "maxChangedFiles": 12, "instructions": "", "maxIterations": 1, "failureLimit": 3, "saturationLimit": 2]
+        let defaults: [String: Any] = ["ollamaHost": Configuration().ollamaHost, "ollamaMaxTurns": Configuration().ollamaMaxTurns, "ollamaContextLength": Configuration().ollamaContextLength, "commitIdentity": Configuration().commitIdentity, "protectedPaths": [String](), "push": false, "timeoutSeconds": 1800, "maxChangedFiles": 12, "instructions": "", "maxIterations": 1, "failureLimit": 3, "saturationLimit": Configuration().saturationLimit]
         let merged = defaults.merging(dictionary) { _, new in new }
         let configuration = try JSONDecoder().decode(Configuration.self, from: JSONSerialization.data(withJSONObject: merged))
         try configuration.validate()

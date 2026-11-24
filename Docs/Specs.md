@@ -27,7 +27,7 @@ The goal is sustained, measurable codebase quality improvement, not maximizing c
 
 ## 3. Architecture
 
-A single Swift executable organized into testable modules:
+A single Swift executable organized into testable modules (the architectural extraction Stage 1 retains `BSACore` and `bsa`; reusable libraries and a generic CLI are deferred to Stage 2):
 - **CLI:** argument parsing, output, exit statuses.
 - **Config:** defaults, repository config, CLI overrides, validation.
 - **Git:** repository detection, branch/worktree lifecycle, diff inspection, commit creation.
@@ -39,6 +39,16 @@ A single Swift executable organized into testable modules:
 - **History:** durable, atomic state and log storage.
 
 Use Swift concurrency and Foundation/Process where practical. Avoid a mandatory database and network daemon. Prefer JSON files for operational records; do not store mutable BSA state in the target repository by default.
+
+### Mission boundary (architectural extraction Stage 1)
+
+`prompt.md` is the canonical Boy Scout mission. The dependency-free `EmbedMission` SwiftPM build tool plugin invokes `MissionGenerator` with declared Markdown input and generated Swift output dependencies. It emits deterministic UTF-8 byte literals, preserving exact file contents without runtime resources, timestamps, absolute paths, or string escaping assumptions. Changes to Markdown or the generator trigger regeneration.
+
+An internal `AgentDefinition` holds product identity, executable name, embedded mission, commit identity, branch/state namespaces and the default consecutive-no-candidate limit. Configuration retains `saturationLimit` and all existing defaults. The runner handles generic consecutive no-op stopping, with no mission priority text.
+
+`Planner` composes an engine-owned execution contract, resolved mission Markdown, project guidance and bounded per-branch history. Harness adapters transport this same prompt; the native Ollama system message contains only tool-loop guidance. Mandatory protocol instructions remain independent of overrides. Git isolation, ref integrity, diff protection, independent verification and commit publication remain authoritative code gates. Prompts are guidance rather than a filesystem sandbox or proof of semantic safety.
+
+`bsa run --prompt PATH` overrides repository/global `prompt`, which overrides the embedded default. CLI relative paths use the invocation directory; configuration paths (including global config) use the original repository root. Repository `null` resets a global override. Explicit missing, unreadable, non-UTF-8 or whitespace-only prompts fail before harness execution. The mission is read once per session. `instructions` remains separate project guidance. `bsa config --prompt` previews the resolved configuration and history. No state migration, target rename, generic CLI, or public framework API is introduced in this stage.
 
 ## 4. Core concepts
 
@@ -129,6 +139,7 @@ bsa run                         # one iteration in current repository
 bsa run --count 100             # up to 100 iterations
 bsa run --until 04:00           # stop at next local 04:00
 bsa run --duration 4h           # bounded elapsed time
+bsa run --prompt ./mission.md    # replace mission; execution contract remains
 bsa run --harness codex
 bsa run --branch bsa/my-project
 bsa status                      # latest session and branch

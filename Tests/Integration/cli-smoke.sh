@@ -34,6 +34,7 @@ CODEX
 chmod +x "$fixture/bin/codex"
 export PATH="$fixture/bin:$PATH"
 export XDG_DATA_HOME="$fixture/data"
+export XDG_CONFIG_HOME="$fixture/config-home"
 cd "$fixture"
 [ "$("$bsa" --version)" = "Boy Scout Agent 0.2.0" ]
 if "$bsa" --version extra > "$fixture/invalid-version" 2>&1; then exit 1; fi
@@ -100,6 +101,39 @@ grep -q 'Outcome: committed' "$fixture/status"
 grep -q 'Stopped after 2 consecutive attempts without a candidate' "$fixture/empty"
 [ "$(grep -c 'no_candidate on' "$fixture/empty")" = 2 ]
 [ "$(git rev-list --all --count)" = 2 ]
+# CLI paths resolve from the invocation directory and override repository missions.
+cp bsa.json "$fixture/prompt-config-backup"
+printf '%s\n' '{"prompt":"missing-config-mission.md","verification":["test -s value.txt"]}' > bsa.json
+printf 'CLI_MISSION_MARKER\n' > "$fixture/mission.md"
+mkdir "$fixture/project/nested"
+export BSA_TEST_PROMPT="$fixture/override-prompt"
+(cd nested && "$bsa" run --prompt ../../mission.md) > "$fixture/override-run"
+grep -q CLI_MISSION_MARKER "$BSA_TEST_PROMPT"
+grep -q 'Do not commit, push' "$BSA_TEST_PROMPT"
+if grep -q 'correctness, reliability, warnings' "$BSA_TEST_PROMPT"; then exit 1; fi
+for path in "$fixture/missing.md" "$fixture/empty.md"; do
+  : > "$fixture/empty.md"
+  if "$bsa" run --prompt "$path" > "$fixture/bad-prompt" 2>&1; then exit 1; fi
+  grep -q 'Cannot load prompt' "$fixture/bad-prompt"
+done
+if "$bsa" run --prompt > "$fixture/missing-prompt-option" 2>&1; then exit 1; fi
+unset BSA_TEST_PROMPT
+# Configuration precedence and repository-relative resolution, including global paths.
+mkdir -p "$XDG_CONFIG_HOME/bsa"
+printf '%s\n' '{"prompt":"../mission.md"}' > "$XDG_CONFIG_HOME/bsa/config.json"
+printf '%s\n' '{}' > bsa.json
+"$bsa" config --prompt > "$fixture/global-prompt"
+grep -q CLI_MISSION_MARKER "$fixture/global-prompt"
+printf 'REPO_MISSION_MARKER\n' > repo-mission.md
+printf '%s\n' '{"prompt":"repo-mission.md"}' > bsa.json
+"$bsa" config --prompt > "$fixture/repo-prompt"
+grep -q REPO_MISSION_MARKER "$fixture/repo-prompt"
+if grep -q CLI_MISSION_MARKER "$fixture/repo-prompt"; then exit 1; fi
+printf '%s\n' '{"prompt":null}' > bsa.json
+"$bsa" config --prompt > "$fixture/default-prompt"
+grep -q 'correctness, reliability, warnings' "$fixture/default-prompt"
+rm "$XDG_CONFIG_HOME/bsa/config.json" repo-mission.md
+cp "$fixture/prompt-config-backup" bsa.json
 for harness in claude pi opencode gemini custom; do
   cat > "$fixture/bin/$harness" <<'HARNESS'
 #!/bin/sh

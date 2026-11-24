@@ -9,13 +9,13 @@ bsa config --prompt
 ```
 
 `bsa config` includes the configured `instructions` string. `bsa config --prompt`
-prints the full prompt that the next iteration would send, including BSA's built-in
-instructions, configured project guidance, and recent outcomes for the configured
+prints the full prompt that the next iteration would send, including the mandatory execution
+contract, resolved mission, configured project guidance, and recent outcomes for the configured
 target branch. It does not invoke a harness. History changes after each iteration.
 Overrides passed to a previous `bsa run --instructions` are not saved; this preview
 uses the current global and repository configuration.
 
-Automatic settings (`base`, `branch`, `harness`, `customCommand`, `ollamaModel`, `baseline`, and `verification`) are written as `null`. For baseline and verification, `null` has the same automatic behavior as omitting the property; `[]` explicitly skips commands. The generated file uses built-in defaults, independent of global settings, and its explicit values override global settings.
+Automatic settings (`prompt`, `base`, `branch`, `harness`, `customCommand`, `ollamaModel`, `baseline`, and `verification`) are written as `null`. For baseline and verification, `null` has the same automatic behavior as omitting the property; `[]` explicitly skips commands. The generated file uses built-in defaults, independent of global settings, and its explicit values override global settings.
 
 A minimal hand-written configuration also works:
 
@@ -31,6 +31,7 @@ A minimal hand-written configuration also works:
 | `baseline` | Ordered shell commands before the harness. Defaults to the resolved `verification` commands. Set `[]` to skip baseline commands. |
 | `verification` | Ordered shell commands for the proposed change in a fresh checkout. Include any setup they need. Defaults to `swift test` for Swift packages; otherwise commands must be configured. Set `[]` to explicitly skip project verification. |
 | `protectedPaths` | Additional case-sensitive POSIX glob patterns against repository-relative paths. `*` can match slashes, e.g. `vendor/*`. Built-in protections always apply. |
+| `prompt` | `null` uses the embedded Boy Scout mission. A UTF-8 Markdown path replaces the mission. Override for one run with `--prompt PATH`. Configured relative paths use the original repository root (including global config); CLI relative paths use the invocation directory. Explicit missing, unreadable, invalid UTF-8, or whitespace-only files fail. |
 | `instructions` | Additional project preferences for the agent. Override for one run with `--instructions "..."`. |
 | `harness` | Automatic discovery, or choose `codex`, `claude`, `pi`, `opencode`, `gemini`, `ollama`, or `custom`. |
 | `ollamaModel` | `null`; required when selecting Ollama. Name of an installed model with tool support. Override with `--ollama-model`. |
@@ -209,3 +210,9 @@ bsa run --identity git
 Both author and committer use the selected identity. It applies only when BSA creates its commit; repository and global Git configuration are unchanged. `git` uses Git's configured author/committer identities and requires a usable Git identity. Inherited `GIT_*` environment variables are filtered by BSA.
 
 To keep your Git identity for every run, set `"commitIdentity": "git"` in your repository or global BSA config. Scheduled runs use these same config files.
+
+## Mission Markdown
+
+Prompt precedence is CLI `--prompt PATH`, repository `prompt`, global `prompt`, then the embedded [Boy Scout mission](../prompt.md). A repository `null` clears a global override. Files are read before execution and the resolved mission stays fixed for the session. Runtime worktrees never change path resolution. The engine contract and runtime history are composed separately and remain present for every harness, including Ollama. Additional `instructions` do not replace the mission or contract.
+
+`bsa config --prompt` retains its existing meaning: preview the configured full prompt without invoking a harness. It takes no path argument; `bsa run --prompt PATH` selects a mission file.

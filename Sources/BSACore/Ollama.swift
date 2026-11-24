@@ -31,7 +31,7 @@ struct OllamaAdapter: HarnessAdapter {
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         let tools = OllamaTools(root: cwd, protectedPaths: configuration.protectedPaths, deadline: deadline)
         var messages: [[String: Any]] = [
-            ["role": "system", "content": "You are a coding agent in a tool-calling loop. Use the supplied tools to inspect and edit this checkout. Tool errors are recoverable: correct the arguments and retry. Finish with a concise explanation after completing your work. Use run_command for Git inspection, builds, and tests. BSA also runs baseline and final verification independently."],
+            ["role": "system", "content": "You are a coding agent in a tool-calling loop. Use the supplied tools to inspect and edit this checkout. Tool errors are recoverable: correct the arguments and retry. Finish with a concise explanation after completing your work. Use run_command for Git inspection, builds, and tests. The orchestrator also runs baseline and final verification independently."],
             ["role": "user", "content": prompt]
         ]
         do {
