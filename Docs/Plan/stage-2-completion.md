@@ -34,7 +34,7 @@ let status = AgentCLI.run(agent: agent)
 // The executable passes status to exit().
 ```
 
-[Examples/documentation.md](../../Examples/documentation.md) also works directly with `swift-agent run --prompt PATH`. Deterministic tests demonstrate a verified documentation commit, unchanged next iteration, protected configuration rejection and missing-mission rejection, without modifying the engine. A separate SwiftPM consumer builds against the two public library products without generating the BSA mission.
+[Examples/documentation.md](https://github.com/tadija/boy-scout-agent/blob/b67443ba4d3b51f8c542ba5802c02bbd43b53070/Examples/documentation.md) also works directly with `swift-agent run --prompt PATH`. Deterministic tests demonstrate a verified documentation commit, unchanged next iteration, protected configuration rejection and missing-mission rejection, without modifying the engine. A separate SwiftPM consumer builds against the two public library products without generating the BSA mission.
 
 ## Verification
 

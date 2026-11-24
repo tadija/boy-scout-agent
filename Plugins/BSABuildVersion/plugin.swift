@@ -2,7 +2,7 @@ import Foundation
 import PackagePlugin
 
 @main
-struct BuildVersion: BuildToolPlugin {
+struct BSABuildVersion: BuildToolPlugin {
     func createBuildCommands(context: PluginContext, target: Target) throws -> [Command] {
         let root = context.package.directoryURL
         let script = root.appendingPathComponent("Scripts/build-metadata.swift")

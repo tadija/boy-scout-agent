@@ -1,9 +1,7 @@
 name: Swift
 on: [push, pull_request]
-
 permissions:
   contents: read
-
 jobs:
   test:
     strategy:
@@ -18,25 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: swift --version
-      - name: Core tests
-        run: swift test --parallel --num-workers 4
-      - name: External integration tests
-        run: BSA_INTEGRATION_TESTS=1 swift test --filter ExternalIntegrationTests
-      - name: Markdown embedding and rebuild dependencies
-        run: sh Tests/Integration/embedding-smoke.sh
-      - name: Version and build metadata
-        run: sh Tests/Integration/version-smoke.sh
-      - run: swift build -c release
-      - run: sh Tests/Integration/cli-smoke.sh "$(swift build -c release --show-bin-path)/bsa"
-      - run: sh Tests/Integration/generic-cli-smoke.sh "$(swift build -c release --show-bin-path)/swift-agent" "$(swift build -c release --show-bin-path)/bsa"
-      - run: sh Tests/Integration/package-consumer-smoke.sh
-      - name: Package tested CLIs
+      - run: swift test --parallel --num-workers 4
+      - run: sh Tests/Integration/embedding-smoke.sh
+      - run: sh Tests/Integration/version-smoke.sh
+      - run: ./Scripts/install.sh /tmp/bsa-bin
+      - run: sh Tests/Integration/cli-smoke.sh /tmp/bsa-bin/bsa
+      - name: Package tested CLI
         run: |
-          for product in bsa swift-agent; do
-            mkdir -p "dist/$product"
-            cp "$(swift build -c release --show-bin-path)/$product" README.md "dist/$product/"
-            tar -czf "dist/$product-$(uname -s)-$(uname -m).tar.gz" -C dist "$product"
-          done
+          mkdir -p dist/bsa
+          cp /tmp/bsa-bin/bsa README.md LICENSE dist/bsa/
+          tar -czf "dist/bsa-$(uname -s)-$(uname -m).tar.gz" -C dist bsa
       - uses: actions/upload-artifact@v4
         with:
           name: bsa-${{ matrix.os }}

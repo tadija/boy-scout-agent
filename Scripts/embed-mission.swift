@@ -9,5 +9,5 @@ guard let markdown = String(data: data, encoding: .utf8),
     fatalError("Mission must be nonempty UTF-8 Markdown: \(input.path)")
 }
 let bytes = data.map(String.init).joined(separator: ",")
-try "// Generated from prompt.md. Do not edit.\nenum EmbeddedMission {\n    static let markdown = String(decoding: [\(bytes)] as [UInt8], as: UTF8.self)\n}\n"
+try "// Generated from PROMPT.md. Do not edit.\nenum EmbeddedMission {\n    static let markdown = String(decoding: [\(bytes)] as [UInt8], as: UTF8.self)\n}\n"
     .write(to: output, atomically: true, encoding: .utf8)

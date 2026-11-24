@@ -33,3 +33,13 @@ which may report the same release version as your existing installation; the bui
 hash identifies its source commit. A failed build leaves your installed executable intact. Local source checkouts are unaffected.
 You can also update your checkout and rerun `./Scripts/install.sh`.
 
+## SwiftAgent dependency
+
+BSA builds resolve `https://github.com/tadija/swift-agent.git` through SwiftPM,
+starting at version `0.1.0`. SwiftAgent installs its generic executable separately;
+BSA's installer continues to install `bsa` by default (`--product bsa` is accepted).
+No SwiftAgent source tree or resource bundle is required by the installed binary.
+
+During the initial extraction, source builds and `bsa update` require the upstream
+`0.1.0` commit/tag to be published first. Existing installed binaries keep working.
+See the [Stage 3 report](Plan/stage-3-completion.md) for publication status.

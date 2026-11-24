@@ -2,7 +2,7 @@
 set -eu
 
 usage() {
-  echo 'Usage: install.sh [--product bsa|swift-agent] [BIN_DIRECTORY]'
+  echo 'Usage: install.sh [--product bsa] [BIN_DIRECTORY]'
   echo 'Build and install a self-contained executable from this checkout (default: ~/.local/bin).'
   echo 'Run again after updating the checkout to install a newer build.'
 }
@@ -10,7 +10,7 @@ usage() {
 product=bsa
 if [ "${1:-}" = --product ]; then
   product=${2:-}
-  case "$product" in bsa|swift-agent) shift 2 ;; *) usage >&2; exit 1 ;; esac
+  case "$product" in bsa) shift 2 ;; *) usage >&2; exit 1 ;; esac
 fi
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;

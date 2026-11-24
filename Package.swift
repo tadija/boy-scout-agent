@@ -4,22 +4,22 @@ import PackageDescription
 let package = Package(
     name: "BoyScoutAgent",
     platforms: [.macOS(.v13)],
-    products: [
-        .library(name: "SwiftAgent", targets: ["SwiftAgent"]),
-        .library(name: "SwiftAgentCLI", targets: ["SwiftAgentCLI"]),
-        .executable(name: "bsa", targets: ["bsa"]),
-        .executable(name: "swift-agent", targets: ["swift-agent"])
+    products: [.executable(name: "bsa", targets: ["bsa"])],
+    dependencies: [
+        .package(url: "https://github.com/tadija/swift-agent.git", .upToNextMinor(from: "0.1.0"))
     ],
     targets: [
-        .target(name: "ProcessSupport"),
-        .target(name: "SwiftAgent", dependencies: ["ProcessSupport"]),
-        .target(name: "SwiftAgentCLI", dependencies: ["SwiftAgent"]),
-        .target(name: "BoyScoutAgent", dependencies: ["SwiftAgent"], plugins: ["EmbedMission"]),
+        .target(name: "BoyScoutAgent", dependencies: [
+            .product(name: "SwiftAgent", package: "swift-agent")
+        ], plugins: ["EmbedMission"]),
         .plugin(name: "EmbedMission", capability: .buildTool()),
-        .plugin(name: "BuildVersion", capability: .buildTool()),
-        .executableTarget(name: "bsa", dependencies: ["SwiftAgentCLI", "BoyScoutAgent"], plugins: ["BuildVersion"]),
-        .executableTarget(name: "swift-agent", dependencies: ["SwiftAgentCLI"], plugins: ["BuildVersion"]),
-        .testTarget(name: "SwiftAgentPublicTests", dependencies: ["SwiftAgent"]),
-        .testTarget(name: "BSACoreTests", dependencies: ["SwiftAgent", "SwiftAgentCLI", "BoyScoutAgent"])
+        .plugin(name: "BSABuildVersion", capability: .buildTool()),
+        .executableTarget(name: "bsa", dependencies: [
+            .product(name: "SwiftAgent", package: "swift-agent"),
+            .product(name: "SwiftAgentCLI", package: "swift-agent"), "BoyScoutAgent"
+        ], plugins: ["BSABuildVersion"]),
+        .testTarget(name: "BoyScoutAgentTests", dependencies: [
+            "BoyScoutAgent", .product(name: "SwiftAgent", package: "swift-agent")
+        ])
     ]
 )

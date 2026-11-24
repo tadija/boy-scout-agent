@@ -44,7 +44,7 @@ Swift packages use `swift test` automatically. For other projects, create a
 
 Checks run before the agent starts and again in a fresh worktree for its proposed
 change. Include dependency setup if your checks need it. See
-[configuration examples](Docs/Configuration.md#baseline-and-verification) for
+[configuration examples](Docs/Configuration.md#project-checks) for
 Swift, Rust, and TypeScript, or use `bsa init` to generate all defaults.
 
 BSA works in a detached Git worktree, leaving your local edits in place.
@@ -87,7 +87,7 @@ Use your configured Git identity and a named review branch:
 bsa run --identity git --branch bsa/importer-cleanup
 ```
 
-Replace the default [Boy Scout mission](prompt.md) with your own Markdown file:
+Replace the default [Boy Scout mission](PROMPT.md) with your own Markdown file:
 
 ```sh
 bsa run --prompt ./missions/improve-docs.md --count 3
@@ -98,27 +98,21 @@ agent with recent run history. BSA may stop early after repeated empty attempts
 or failures. See [operations](Docs/Operations.md) for stopping runs, schedules,
 and adopting existing branches with `--force`.
 
-## Build your own agent
+## Powered by SwiftAgent
 
-The reusable `SwiftAgent` and `SwiftAgentCLI` libraries power BSA. The generic
-`swift-agent` executable runs your own mission:
-
-```sh
-./Scripts/install.sh --product swift-agent
-swift-agent run --prompt ./Examples/documentation.md --count 3
-```
-
-See [SwiftAgent](Docs/SwiftAgent.md) for library integration, custom executables,
-and generic CLI configuration.
+BSA supplies the Boy Scout mission and product defaults. The independent
+[SwiftAgent](https://github.com/tadija/swift-agent) package supplies the engine
+and reusable CLI. Use it to run custom Markdown missions or build your own agent.
+See [the architecture](Docs/SwiftAgent.md) for dependency and ownership details.
 
 ## Documentation
 
 - [Installation and updates](Docs/Installation.md) — requirements, install paths, and versioning.
 - [Configuration](Docs/Configuration.md) — checks, agents, Ollama, permissions, and missions.
 - [Operations](Docs/Operations.md) — history, overnight runs, schedules, and recovery.
-- [SwiftAgent](Docs/SwiftAgent.md) — generic CLI, Swift libraries, and architecture.
+- [SwiftAgent](Docs/SwiftAgent.md) — upstream package and BSA architecture.
 - [Testing](Docs/Tests.md) — core tests, integration tests, and CLI smoke tests.
-- [Specification](Docs/Specs.md) — iteration lifecycle and verification contract.
+- [Specification](Docs/Specs.md) — Boy Scout mission and product compatibility.
 
 ---
 

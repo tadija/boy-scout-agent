@@ -6,7 +6,7 @@ Work in the existing boy-scout-agent repository. Inspect the actual implementati
 Separate the Boy Scout mission from the generic repository-agent execution mechanism, without extracting a separate repository yet.
 
 ## Requirements
-- Extract the Boy Scout-specific instructions from Harness.swift and any other relevant locations into a canonical prompt.md. Preserve their meaning and existing defaults.
+- Extract the Boy Scout-specific instructions from Harness.swift and any other relevant locations into a canonical PROMPT.md. Preserve their meaning and existing defaults.
 - Embed the default Markdown at build time so the installed executable remains self-contained and requires no resource bundle or source checkout. Use a deterministic SwiftPM-compatible generation approach, with correct rebuild dependencies and tests for prompt fidelity. Avoid unnecessary dependencies.
 - Separate prompt composition into engine-owned execution contract, mission Markdown, and per-iteration runtime context. Keep mandatory protocol instructions independent of mission overrides. Enforce actual safety invariants in code, not just prompts.
 - Support a runtime prompt override via --prompt PATH and the existing repository configuration format. Resolve CLI override > repository configuration > embedded default. Resolve relative paths against documented bases; fail clearly for missing, unreadable or empty explicit prompts. Preserve existing custom instructions as a separate concept.

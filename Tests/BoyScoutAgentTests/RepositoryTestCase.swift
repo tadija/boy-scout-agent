@@ -1,5 +1,5 @@
 import XCTest
-@testable import SwiftAgent
+import SwiftAgent
 import BoyScoutAgent
 
 struct FakeHarness: HarnessAdapter {

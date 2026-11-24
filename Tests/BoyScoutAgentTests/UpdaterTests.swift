@@ -1,5 +1,5 @@
 import XCTest
-@testable import SwiftAgent
+import SwiftAgent
 @testable import BoyScoutAgent
 
 final class UpdaterTests: XCTestCase {

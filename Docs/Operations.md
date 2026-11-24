@@ -1,113 +1,49 @@
 # Running and maintaining BSA
 
-## Inspect a run
+BSA delegates execution, scheduling, cancellation, and recovery to SwiftAgent.
+The [upstream operations guide](https://github.com/tadija/swift-agent/blob/0.1.0/Docs/Operations.md)
+owns the shared operational guarantees and native scheduler setup. Substitute
+`bsa` for `swift-agent` in those commands and paths.
 
-Use `bsa status` for the latest outcome, branch, commit candidate and diagnostics. Per-iteration JSON records live under `$XDG_DATA_HOME/bsa` (default `~/.local/share/bsa`). After an interrupted publication, inspect the record and Git branch before attempting recovery.
-
-Worktrees isolate proposed edits. Harnesses and verification commands still run with your account's permissions. Use trusted projects and commands, or run BSA in an OS sandbox.
-
-Each iteration starts a fresh agent with recent tasks, failures and changed paths from the target branch. BSA stops after two consecutive empty attempts, three consecutive failures, cancellation, timeout, or an error that needs attention. Running again continues from the BSA branch. If your development branch has diverged, start a new target with `bsa run --branch bsa/next-improvement`, or explicitly continue from the existing target tip with `--force` (see recovery below).
-
-## Overnight operation
+## Inspect and bound work
 
 ```sh
-bsa run --count 100 --until 04:00
+bsa status
+bsa history
 bsa run --count 100 --duration 4h
 bsa stop
-bsa history
 bsa doctor
 ```
 
-Time windows cap active work as well as iteration starts; the smaller of the
-iteration timeout and remaining window applies. Cleanup and process termination
-may take additional time. `--until` uses the next local HH:MM, advancing missing
-DST times and choosing the first repeated time. Use one window flag per run.
-A window does not change the default one-iteration count; supply `--count` for
-repeated work. SIGINT, SIGTERM and `stop` terminate process groups with a bounded
-TERM grace period before KILL. Repository locks cover all branches and linked
-worktrees, including runs using different data directories; kernel locks release
-on process exit and require no stale PID deletion.
+BSA's history remains under `$XDG_DATA_HOME/bsa` (default `~/.local/share/bsa`).
+Existing records and branch ownership remain usable; no migration is required.
+Run again to continue the owned branch. Inspect preserved worktrees after an
+interruption before manually removing them. Never delete state to bypass ownership.
 
-Cost budgets are unavailable because the adapters do not expose reliable normalized cost data. Use count and time bounds.
+## Continue an existing branch
+
+```sh
+bsa run --branch bsa/my-improvements --force
+```
+
+This adopts the branch's current tip, preserves its commits, and requires it to
+be unchecked out. A diverged target needs `--force` again or a compatible base.
+See upstream [recovery details](https://github.com/tadija/swift-agent/blob/0.1.0/Docs/Operations.md#recovery-and-troubleshooting).
 
 ## Recurring schedules
 
 ```sh
 bsa schedule add --at 00:00 --duration 4h
 bsa schedule list
+bsa schedule remove ID
 ```
 
-Definitions and executable wrappers live in `$XDG_DATA_HOME/bsa/schedules`.
-Creation prepares files without enabling a service. The wrapper captures the
-repository and executable paths, honors the configured `maxIterations` (default 1) and uses the current
-repository configuration at execution time. Keep the installed BSA executable at
-a stable absolute path. Native services need the harness executable on their PATH
-and existing noninteractive authentication. Test the generated `.sh` manually
-before enabling overnight execution.
+Creation generates files without enabling a service. Existing wrappers and native
+services remain valid. BSA keeps `$XDG_DATA_HOME/bsa/schedules`, macOS labels
+`local.bsa.ID`, and Linux units `bsa-ID.service` / `bsa-ID.timer`. Disable services
+before removal. Follow the upstream native scheduler instructions with these names.
+Keep the installed executable at a stable path and configure noninteractive
+harness authentication. Schedules reload `bsa.json`, including `maxIterations`.
 
-On macOS, enable the generated plist with:
-
-```sh
-launchctl bootstrap "gui/$(id -u)" /absolute/path/to/ID.plist
-# Disable before removing:
-launchctl bootout "gui/$(id -u)" /absolute/path/to/ID.plist
-```
-
-On Linux, copy the generated `bsa-ID.service` and `bsa-ID.timer` into
-`~/.config/systemd/user`, then:
-
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now bsa-ID.timer
-# Disable before removing:
-systemctl --user disable --now bsa-ID.timer
-```
-
-After disabling, use `bsa schedule remove ID` to delete the definition and wrapper.
-Where no user service manager is available, run the wrapper from your existing
-scheduler. Schedules use host local time; the creation timezone is recorded for
-reference. Native launchd/systemd DST and sleeping-host behavior applies; missed
-runs are not explicitly replayed. Concurrent invocations fail safely on the
-repository lock. User services require a logged-in user (or systemd lingering).
-
-## Recovery and troubleshooting
-
-After a crash, the next run acquires the repository lock and reconciles the latest
-running record. If its candidate SHA equals the target ref, it records the commit
-and restores branch ownership; otherwise it marks the attempt interrupted.
-Unpublished candidates are never automatically published. Abandoned worktrees
-remain in the repository's data directory for inspection and copying partial work.
-Use `git worktree list`, inspect the relevant `worktree-ID` / `verify-ID`, then
-remove them manually with `git worktree remove` when their contents are no longer
-needed. Never delete the data directory to bypass branch ownership checks.
-
-To explicitly adopt an existing or externally changed target branch, use:
-
-```sh
-bsa run --harness claude --branch bsa/boy-scout-agent --force
-```
-
-`--force` continues from the target's current tip, including when it has diverged
-from the configured base. It preserves existing commits and does not reset the
-branch to the base. Adoption updates BSA's local ownership record, even if the
-agent finds no candidate. A diverged target still needs `--force` on subsequent
-runs, or a compatible `--base`. The target must be unchecked out in every worktree;
-concurrent ref changes are still rejected. This flag applies only to this run and
-cannot be enabled through `bsa.json`.
-
-Normal rejected attempts discard their isolated
-changes after saving bounded diagnostics, as required by the verification contract.
-
-History JSON records retain bounded harness summaries and check outputs, IDs,
-SHAs, paths and timings. Records are retained indefinitely for audit; native
-schedule output logs should be rotated by the operator. They may contain sensitive
-repository output. No dashboard, database or background BSA daemon is required.
-
-Cancellation and timeout preserve dirty implementation worktrees. The iteration
-record includes the path when Git refuses to remove one.
-
-## Shared engine operations
-
-`swift-agent` provides the same run, status, history, stop, doctor, and schedule commands with its own namespace. Its schedule files live under `$XDG_DATA_HOME/swift-agent/schedules`; Linux units use `swift-agent-ID.service` and `.timer`, and macOS labels use `local.swift-agent.ID`. Configure `prompt` in `swift-agent.json` before scheduling, since wrappers reload configuration rather than capture a one-run prompt override. `swift-agent update` reports that self-update is unavailable until an upstream source is established.
-
-Locks and stop markers use the supplied state namespace inside Git's common directory, preserving `bsa.lock` and `bsa.stop`. The existing same-agent exclusion across branches, linked worktrees, and alternate data directories remains. Different agent namespaces have separate history and cancellation files; simultaneous runs can still fail the repository-ref integrity guard when another agent publishes. Run agents sequentially against the same repository.
+BSA retains `bsa.lock` and `bsa.stop` in Git's common directory. Generic agents
+have separate namespaces; run agents sequentially against the same repository.

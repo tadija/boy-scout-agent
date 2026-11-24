@@ -1,0 +1,15 @@
+{
+  "originHash" : "9530cfc6a30d3693a0145ff594de27f5d2fbb4856dbe629bfb7b7dee78fcfe76",
+  "pins" : [
+    {
+      "identity" : "swift-agent",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tadija/swift-agent.git",
+      "state" : {
+        "revision" : "940636027408370c4652e705bc234d24d7f6c445",
+        "version" : "0.1.0"
+      }
+    }
+  ],
+  "version" : 3
+}

@@ -4,7 +4,7 @@ source_directory=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT HUP INT TERM
 mkdir -p "$fixture/source/Plugins" "$fixture/source/Scripts" "$fixture/source/Sources/Fixture"
-cp -R "$source_directory/Plugins/BuildVersion" "$fixture/source/Plugins/"
+cp -R "$source_directory/Plugins/BSABuildVersion" "$fixture/source/Plugins/BuildVersion"
 cp "$source_directory/Scripts/build-metadata.swift" "$fixture/source/Scripts/"
 cat > "$fixture/source/Package.swift" <<'PACKAGE'
 // swift-tools-version: 6.0
