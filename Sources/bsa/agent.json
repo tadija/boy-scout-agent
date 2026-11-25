@@ -1,0 +1,9 @@
+{
+  "name": "Boy Scout Agent",
+  "version": "0.3.0",
+  "executableName": "bsa",
+  "commitIdentity": "Boy Scout Agent <boy-scout-agent@localhost>",
+  "update": {
+    "repository": "https://github.com/tadija/boy-scout-agent.git"
+  }
+}

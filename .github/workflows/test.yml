@@ -10,16 +10,26 @@ jobs:
         include:
           - os: macos-latest
           - os: ubuntu-latest
-            container: swift:6.0-noble
+            container: swift:6.4-noble
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
       - run: swift --version
       - run: swift test --parallel --num-workers 4
-      - run: sh Tests/Integration/embedding-smoke.sh
-      - run: sh Tests/Integration/version-smoke.sh
-      - run: ./Scripts/install.sh /tmp/bsa-bin
+      - run: sh Tests/Integration/source-update-smoke.sh
+      - name: Declare artifact build identity
+        run: |
+          swift -e '
+          import Foundation
+          let input = URL(fileURLWithPath: "Sources/bsa/agent.json")
+          var product = try JSONSerialization.jsonObject(with: Data(contentsOf: input)) as! [String: Any]
+          product["build"] = String(ProcessInfo.processInfo.environment["GITHUB_SHA"]!.prefix(7))
+          var data = try JSONSerialization.data(withJSONObject: product, options: [.prettyPrinted, .sortedKeys])
+          data.append(0x0A)
+          try data.write(to: input, options: .atomic)
+          '
+      - run: ./install.sh /tmp/bsa-bin
       - run: sh Tests/Integration/cli-smoke.sh /tmp/bsa-bin/bsa
       - name: Package tested CLI
         run: |

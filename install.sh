@@ -20,7 +20,7 @@ if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ -z "$1" ]; }; then
   exit 1
 fi
 
-source_directory=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+source_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 bin_directory=${1:-"$HOME/.local/bin"}
 mkdir -p -- "$bin_directory"
 bin_directory=$(CDPATH= cd -- "$bin_directory" && pwd)
