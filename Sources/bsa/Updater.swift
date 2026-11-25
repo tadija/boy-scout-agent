@@ -6,10 +6,8 @@ import Glibc
 import Darwin
 #endif
 
-public struct Updater {
-    public init() {}
-
-    public func update(executable: URL, onProgress: (String) -> Void = { _ in }) throws {
+struct Updater {
+    func update(executable: URL, onProgress: (String) -> Void = { _ in }) throws {
         let commands = CommandRunner()
         try update(executable: executable, onProgress: onProgress) { arguments, directory in
             try commands.run("/usr/bin/env", arguments, cwd: directory)

@@ -1,40 +1,44 @@
 # Boy Scout Agent
 
-> "Leave your codebase a little better than you found it."
+> Leave your codebase a little better than you found it.
 
-Boy Scout Agent (`bsa`) asks a coding agent to find one worthwhile improvement,
-checks its work, and gives you a local Git commit to review.
-Run it once or let it work through a few improvements.
+Boy Scout Agent (`bsa`) finds one worthwhile improvement, checks it, and gives
+you a local Git commit to review. It favors small, high confidence changes over
+speculative churn: correctness first, then reliability, warnings, maintainability,
+consistency, documentation, and polish. No useful candidate is a valid outcome.
 
 ## Install
 
-Requires Swift 6+, Git, and macOS or Linux. Install and sign in to a supported
-agent CLI: Codex, Claude Code, Pi, OpenCode, or Gemini.
-You can also use [Ollama](Docs/Configuration.md#ollama) without an external agent CLI.
-
-From a checkout of this repository:
+Requires Swift 6+, Git, and macOS or Linux. Install and authenticate Codex,
+Claude Code, Pi, OpenCode, or Gemini; alternatively use
+[Ollama](https://github.com/tadija/swift-agent/blob/0.1.0/Docs/Configuration.md#ollama).
 
 ```sh
+git clone https://github.com/tadija/boy-scout-agent.git
+cd boy-scout-agent
 ./Scripts/install.sh
 export PATH="$HOME/.local/bin:$PATH"
 bsa --version
 ```
 
-To update later, run `bsa update`. See [installation and updates](Docs/Installation.md)
-for custom install paths, build metadata, and update behavior.
+Pass a destination to install elsewhere: `./Scripts/install.sh /path/to/bin`.
+The installed executable embeds its mission and needs no source checkout.
+Update from any directory with `bsa update`, which builds the latest GitHub `main`.
+See [installation and updates](Docs/Installation.md).
 
-## Try it on your project
+## Get started
 
-Open a trusted Git repository with at least one commit:
+In a trusted Git repository with at least one commit:
 
 ```sh
 cd ~/Projects/my-app
 bsa run
 bsa status
+git diff HEAD...bsa/my-app
 ```
 
-Swift packages use `swift test` automatically. For other projects, create a
-`bsa.json` with your checks. For example, in a Python project:
+Swift packages need no configuration: BSA uses `swift test`. For other projects,
+put your checks in `bsa.json`, for example:
 
 ```json
 {
@@ -42,78 +46,55 @@ Swift packages use `swift test` automatically. For other projects, create a
 }
 ```
 
-Checks run before the agent starts and again in a fresh worktree for its proposed
-change. Include dependency setup if your checks need it. See
-[configuration examples](Docs/Configuration.md#project-checks) for
-Swift, Rust, and TypeScript, or use `bsa init` to generate all defaults.
-
-BSA works in a detached Git worktree, leaving your local edits in place.
-Each accepted improvement becomes a commit on a local `bsa/<project>` branch.
-Review and merge using the branch name BSA prints:
-
-```sh
-# Example for a project named my-app
-git diff HEAD...bsa/my-app
-git merge bsa/my-app
-```
-
-BSA leaves merging and pushing to you by default. Agent tools and check commands
-run with your account's permissions, so use trusted repositories and commands.
+BSA works in isolated worktrees and preserves your local edits. Accepted changes
+become commits on `bsa/<project>`; review the branch printed by BSA and merge when
+ready. Merging and pushing are yours by default. Agent tools and checks run with
+your account's privileges; use trusted projects and commands.
 
 ## Everyday examples
 
-Focus a run on a specific concern:
-
 ```sh
-bsa run --instructions "Improve error messages in the CSV importer; preserve public APIs."
-```
+# Focus the Boy Scout mission
+bsa run --instructions "Improve CSV importer errors; preserve public APIs."
 
-Try up to five improvements with your preferred agent:
-
-```sh
+# Try up to five improvements with your preferred agent
 bsa run --count 5 --harness claude
-```
 
-Give a longer run a time limit, then inspect its results:
-
-```sh
+# Bound a longer session and inspect its results
 bsa run --count 100 --duration 4h
 bsa history
+bsa stop
+
+# Replace the mission with your own Markdown
+bsa run --prompt ./missions/improve-docs.md
 ```
 
-Use your configured Git identity and a named review branch:
+Run again to continue the same review branch. Each iteration starts a fresh agent;
+repeated empty attempts or failures stop a session early. `bsa config` shows effective
+settings, `bsa config --prompt` previews the composed prompt, and `bsa --help`
+lists all commands.
 
-```sh
-bsa run --identity git --branch bsa/importer-cleanup
-```
+BSA uses `bsa.json`, `~/.config/bsa/config.json`, and `~/.local/share/bsa`
+(with standard XDG overrides). Its commit identity is
+`Boy Scout Agent <boy-scout-agent@localhost>`; use `--identity git` for yours.
+All other configuration and operational behavior comes from SwiftAgent:
 
-Replace the default [Boy Scout mission](PROMPT.md) with your own Markdown file:
+- [Configuration](https://github.com/tadija/swift-agent/blob/0.1.0/Docs/Configuration.md): checks, harnesses, permissions, limits, and prompt overrides.
+- [Operations](https://github.com/tadija/swift-agent/blob/0.1.0/Docs/Operations.md): schedules, recovery, history, and branch adoption.
 
-```sh
-bsa run --prompt ./missions/improve-docs.md --count 3
-```
+Use `bsa` in place of `swift-agent` in upstream commands and paths.
 
-Run `bsa run` again to continue the same branch. Each iteration starts a fresh
-agent with recent run history. BSA may stop early after repeated empty attempts
-or failures. See [operations](Docs/Operations.md) for stopping runs, schedules,
-and adopting existing branches with `--force`.
+## A specialized SwiftAgent application
 
-## Powered by SwiftAgent
+[SwiftAgent](https://github.com/tadija/swift-agent) provides the mechanism;
+BSA provides the [mission](PROMPT.md). The entire product definition and shared
+CLI invocation live in [BoyScoutAgent.swift](Sources/bsa/BoyScoutAgent.swift), using the versioned
+remote dependency in [Package.swift](Package.swift).
 
-BSA supplies the Boy Scout mission and product defaults. The independent
-[SwiftAgent](https://github.com/tadija/swift-agent) package supplies the engine
-and reusable CLI. Use it to run custom Markdown missions or build your own agent.
-See [the architecture](Docs/SwiftAgent.md) for dependency and ownership details.
-
-## Documentation
-
-- [Installation and updates](Docs/Installation.md) — requirements, install paths, and versioning.
-- [Configuration](Docs/Configuration.md) — checks, agents, Ollama, permissions, and missions.
-- [Operations](Docs/Operations.md) — history, overnight runs, schedules, and recovery.
-- [SwiftAgent](Docs/SwiftAgent.md) — upstream package and BSA architecture.
-- [Testing](Docs/Tests.md) — core tests, integration tests, and CLI smoke tests.
-- [Specification](Docs/Specs.md) — Boy Scout mission and product compatibility.
-
----
-
-`done for fun`
+To create your own agent, change the name, executable name, Markdown mission,
+and any intentional defaults. No engine changes or wrappers are required.
+BSA explicitly retains its historical commit email; its namespaces and stop policy
+use upstream defaults. Mission embedding, build metadata, and the updater support
+independent BSA distribution. See the upstream
+[API guide](https://github.com/tadija/swift-agent/blob/0.1.0/Docs/API.md),
+[BSA specification](Docs/Specs.md), and [development guide](Docs/Development.md).

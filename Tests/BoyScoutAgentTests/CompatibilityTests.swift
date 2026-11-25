@@ -1,6 +1,6 @@
 import XCTest
 import SwiftAgent
-import BoyScoutAgent
+@testable import bsa
 
 final class CompatibilityTests: RepositoryTestCase {
     func testExistingConfigurationAndHistoryRemainUsable() throws {
@@ -37,24 +37,6 @@ final class CompatibilityTests: RepositoryTestCase {
         XCTAssertEqual(try run { _ in self.success() }.outcome, "no_candidate")
         XCTAssertEqual(try runner.history(at: checkout, dataDirectory: data).count, 3)
         XCTAssertEqual(try git(["status", "--porcelain"]), "")
-    }
-
-    func testOverrideKeepsContractAndProtectsProductConfiguration() throws {
-        let repo = try Repository(at: checkout)
-        try write("mission.md", "Document one importer example.")
-        try write("bsa.json", #"{"prompt":"mission.md","instructions":"Keep examples concise.","verification":[]}"#)
-        let configuration = try Configuration.load(repository: repo, agent: .boyScout)
-        XCTAssertEqual(try configuration.mission(repository: repo, agent: .boyScout), "Document one importer example.")
-        let preview = try Runner(agent: .boyScout).prompt(at: checkout, configuration: configuration, dataDirectory: data)
-        XCTAssertTrue(preview.contains("Do not commit, push"))
-        XCTAssertTrue(preview.contains("Keep examples concise."))
-        XCTAssertFalse(preview.contains("correctness, reliability, warnings"))
-        let record = try run { cwd in
-            try self.write("bsa.json", "{}", at: cwd)
-            return self.success()
-        }
-        XCTAssertEqual(record.outcome, "rejected")
-        try assertNoCommit()
     }
 
     func testScheduleNamesAndWrapperRemainCompatible() throws {

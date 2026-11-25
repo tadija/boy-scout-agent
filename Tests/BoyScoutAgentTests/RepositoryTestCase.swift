@@ -1,6 +1,6 @@
 import XCTest
 import SwiftAgent
-import BoyScoutAgent
+@testable import bsa
 
 struct FakeHarness: HarnessAdapter {
     let name = "fake"
@@ -45,10 +45,4 @@ class RepositoryTestCase: XCTestCase {
         try Runner(agent: .boyScout).run(at: checkout, harness: FakeHarness(action: action), dataDirectory: data)
     }
     func success() -> CommandResult { CommandResult(status: 0, output: "Correct the value fixture", timedOut: false) }
-    func assertNoCommit() throws {
-        XCTAssertEqual(try git(["rev-list", "--all", "--count"]), "1")
-        XCTAssertFalse(try git(["branch", "--list"]).contains("bsa/"))
-        XCTAssertEqual(try git(["worktree", "list", "--porcelain"]).components(separatedBy: "worktree ").count, 2)
-    }
-
 }

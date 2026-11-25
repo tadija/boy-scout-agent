@@ -1,45 +1,37 @@
 # Installation and updates
 
-Run the installer from a checkout of this repository.
-
-Build with Swift 6 or later on macOS or Linux. Install Git and, for external harnesses, install and sign in to your chosen coding agent CLI. BSA looks for Codex, Claude Code, Pi, OpenCode, Gemini. It also includes a standalone [Ollama agent](Configuration.md#ollama) for inference through your Ollama server; no external agent CLI is needed for Ollama.
+Build with Swift 6+ and Git on macOS or Linux. See the [README](../README.md#install)
+for initial setup and harness prerequisites.
 
 ```sh
-./Scripts/install.sh
-export PATH="$HOME/.local/bin:$PATH"
-bsa --version                     # Boy Scout Agent 0.2.1 (<short commit hash>)
+./Scripts/install.sh                  # ~/.local/bin/bsa
+./Scripts/install.sh /path/to/bin     # custom destination
 ```
 
-`VERSION` is the release version source. A SwiftPM plugin runs the Swift metadata
-generator at build time to embed that version and the first seven characters of
-Git HEAD. The build command declares the version file, generator script and Git metadata as inputs, so incremental builds refresh metadata on source and revision changes. Installed binaries report their build without Git or a checkout. Builds
-from source archives without Git metadata report `unknown` for the build.
-
-To install into a different directory, run `./Scripts/install.sh /path/to/bin`.
-The script builds a release executable and replaces any existing BSA installation
-only after a successful build.
-
-Update an installed BSA from any directory:
+The installer builds only `bsa` in release mode and atomically replaces the
+installed executable after a successful build. `--product bsa` remains accepted
+for existing installation scripts.
 
 ```sh
 bsa update
 ```
 
-This downloads the latest `main` source from `https://github.com/tadija/boy-scout-agent`,
-builds it with your local Swift toolchain, and replaces the executable you invoked
-(resolving symlinks). Git, Swift 6 or later, network access, and write access to the
-installation directory are required. This installs the current development branch,
-which may report the same release version as your existing installation; the build
-hash identifies its source commit. A failed build leaves your installed executable intact. Local source checkouts are unaffected.
-You can also update your checkout and rerun `./Scripts/install.sh`.
+Self-update clones `https://github.com/tadija/boy-scout-agent` at `main`, builds
+with your local Swift toolchain, validates the binary, and atomically replaces
+the invoked executable, resolving symlinks. It needs network access and write
+access to the installation directory. Failed builds preserve the installed binary.
+This installs the development branch, which may retain the same release version.
+Alternatively, update your checkout and rerun the installer.
 
-## SwiftAgent dependency
+`VERSION` supplies BSA's release version; `bsa --version` also reports the first
+seven characters of its source commit. Archive builds without Git metadata report
+`unknown`. Both metadata and the default mission are embedded: no SwiftAgent
+installation, source tree, Markdown file, or resource bundle is needed at runtime.
+Explicit prompt override files and project/harness toolchains remain user supplied.
 
-BSA builds resolve `https://github.com/tadija/swift-agent.git` through SwiftPM,
-starting at version `0.1.0`. SwiftAgent installs its generic executable separately;
-BSA's installer continues to install `bsa` by default (`--product bsa` is accepted).
-No SwiftAgent source tree or resource bundle is required by the installed binary.
+SwiftPM resolves SwiftAgent from its public repository at `0.1.0..<0.2.0`;
+[Package.resolved](../Package.resolved) records the tested revision. Existing BSA
+configuration, history, branches, and schedules need no migration.
 
-During the initial extraction, source builds and `bsa update` require the upstream
-`0.1.0` commit/tag to be published first. Existing installed binaries keep working.
-See the [Stage 3 report](Plan/stage-3-completion.md) for publication status.
+CI independently tests macOS and Linux and packages the installed binary, README,
+and license as workflow artifacts. It does not publish GitHub releases.

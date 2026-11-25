@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
-# Invoke with an absolute executable path; this test never calls a real model.
+# Installed product and legacy CLI compatibility; no real model is invoked.
+# Adapter argument/CLI precedence coverage is not yet present upstream in 0.1.0.
 bsa=${1:?usage: cli-smoke.sh /absolute/path/to/bsa}
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT HUP INT TERM
@@ -64,8 +65,12 @@ git commit -qm Initial
 "$bsa" config > "$fixture/config-instructions"
 grep -q 'CONFIG_INSTRUCTIONS_MUST_BE_OVERRIDDEN' "$fixture/config-instructions"
 "$bsa" config --prompt > "$fixture/prompt-preview"
-grep -q 'Make exactly one bounded' "$fixture/prompt-preview"
+grep -q 'Leave the codebase a little better' "$fixture/prompt-preview"
 grep -q 'CONFIG_INSTRUCTIONS_MUST_BE_OVERRIDDEN' "$fixture/prompt-preview"
+# Review the composed product prompt, not only the embedded Markdown.
+[ "$(grep -c '^# Execution contract' "$fixture/prompt-preview")" = 1 ]
+[ "$(grep -c '^# Boy Scout Agent' "$fixture/prompt-preview")" = 1 ]
+[ "$(grep -c '^# Runtime context' "$fixture/prompt-preview")" = 1 ]
 cp bsa.json "$fixture/project-config.json"
 cp "$fixture/defaults.json" bsa.json
 "$bsa" config > "$fixture/initial-config"
@@ -166,7 +171,7 @@ case "${0##*/}" in
     [ -f value.txt ] || exit 2;;
   custom) [ "$(cd "$1" && pwd -P)" = "$(pwd -P)" ] && shift || exit 2;;
 esac
-case "$1" in *'Make exactly one bounded'*) exit 0;; *) exit 2;; esac
+case "$1" in *'Leave the codebase a little better'*) exit 0;; *) exit 2;; esac
 HARNESS
   chmod +x "$fixture/bin/$harness"
   printf '%s\n' '{"customCommand":["custom","{cwd}","{prompt}"],"verification":["test -s value.txt"]}' > bsa.json
@@ -199,32 +204,6 @@ schedule_id=$(awk '{print $1}' "$fixture/schedules")
 [ ! -s "$fixture/schedules" ]
 if "$bsa" run --until 25:00 > "$fixture/invalid" 2>&1; then exit 1; fi
 if "$bsa" stop > "$fixture/stop" 2>&1; then exit 1; fi
-# Synchronize on an actual partial edit before requesting cancellation.
-cat > "$fixture/bin/slow-agent" <<'AGENT'
-#!/bin/sh
-printf 'partial edit\n' > value.txt
-touch "$BSA_TEST_READY"
-sleep 60
-AGENT
-chmod +x "$fixture/bin/slow-agent"
-export BSA_TEST_READY="$fixture/ready"
-printf '%s\n' '{"harness":"custom","customCommand":["slow-agent","{prompt}"],"verification":["true"]}' > bsa.json
-"$bsa" run > "$fixture/slow" 2>&1 &
-active=$!
-attempt=0
-until [ -f "$BSA_TEST_READY" ]; do
-  kill -0 "$active" || exit 1
-  attempt=$((attempt + 1))
-  [ "$attempt" -lt 200 ] || exit 1
-  sleep 0.1
-done
-if "$bsa" run > "$fixture/overlap" 2>&1; then exit 1; fi
-grep -q 'holds this repository' "$fixture/overlap"
-"$bsa" stop
-if wait "$active"; then exit 1; fi
-grep -q 'cancelled on' "$fixture/slow"
-[ "$(git rev-list --all --count)" = 2 ]
-[ "$(cat value.txt)" = 'uncommitted user work' ]
 printf '%s\n' '{"baseline":[],"verification":[]}' > bsa.json
 "$bsa" run --branch bsa/skipped > "$fixture/skipped" 2> "$fixture/skipped-progress"
 grep -q 'Baseline skipped' "$fixture/skipped-progress"

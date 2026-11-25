@@ -1,6 +1,6 @@
 import XCTest
 import SwiftAgent
-import BoyScoutAgent
+@testable import bsa
 
 final class AgentDefinitionTests: XCTestCase {
     func testEmbeddedMissionMatchesCanonicalMarkdownExactly() throws {
@@ -13,6 +13,9 @@ final class AgentDefinitionTests: XCTestCase {
     func testBoyScoutIdentityAndPolicyDefaults() {
         let agent = AgentDefinition.boyScout
         XCTAssertEqual(agent.name, "Boy Scout Agent")
+        XCTAssertEqual(agent.commitIdentity, "Boy Scout Agent <boy-scout-agent@localhost>")
+        XCTAssertEqual(Configuration(agent: .boyScout).maxIterations, 1)
+        XCTAssertEqual(Configuration(agent: .boyScout).failureLimit, 3)
         XCTAssertEqual(agent.executableName, "bsa")
         XCTAssertEqual(agent.branchNamespace, "bsa")
         XCTAssertEqual(agent.stateNamespace, "bsa")
