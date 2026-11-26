@@ -5,7 +5,8 @@ source_directory=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT HUP INT TERM
 mkdir "$fixture/source"
-(cd "$source_directory" && tar --exclude=.build --exclude=.git --exclude=.swiftpm --exclude=.DS_Store -cf - .) | (cd "$fixture/source" && tar -xf -)
+# Keep fixture files owned by the current user, including in root-run CI containers.
+(cd "$source_directory" && tar --exclude=.build --exclude=.git --exclude=.swiftpm --exclude=.DS_Store -cf - .) | (cd "$fixture/source" && tar --no-same-owner -xf -)
 cd "$fixture/source"
 swift - "$fixture/source" <<'SWIFT'
 import Foundation
