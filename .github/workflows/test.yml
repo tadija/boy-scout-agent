@@ -37,7 +37,11 @@ jobs:
           data.append(0x0A)
           try data.write(to: input, options: .atomic)
           '
-      - run: ./install.sh /tmp/bsa-bin
+      - name: Build and install CLI
+        run: |
+          swift build -c release
+          mkdir -p /tmp/bsa-bin
+          cp .build/release/bsa /tmp/bsa-bin/
       - run: sh Tests/Integration/cli-smoke.sh /tmp/bsa-bin/bsa
       - name: Package tested CLI
         run: |

@@ -19,7 +19,9 @@ SWIFT
 git init -q -b main
 git add .
 git -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm Fixture
-./install.sh --product bsa "$fixture/bin"
+swift build -c release
+mkdir -p "$fixture/bin"
+cp .build/release/bsa "$fixture/bin/"
 ln -s "$fixture/bin/bsa" "$fixture/bsa-link"
 before=$("$fixture/bsa-link" --version)
 # Run away from both the source and installed directory, through an existing symlink.
